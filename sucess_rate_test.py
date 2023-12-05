@@ -17,7 +17,7 @@ import example_pendulum_double_pendulum as example_pendulum
 import time
 import random
 import torch.nn as nn
-
+import argparse
 # %%
 #set the random seed for reproducibility
 seed_value = random.randint(0, 2**32 - 1)  # This generates a random integer in the range [0, 2^32 - 1]
@@ -43,9 +43,16 @@ print(f"Seed value: {seed_value}")
 save = False
 #set the environment for deciding the path to save the files
 environment = "server"
-sample_size = 50
-device = 'cuda:5'
+sample_size = 5
+device = 'cuda:6'
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--lr",type=float)
+parser.add_argument("--rho",type=float)
+parser.add_argument("--mu",type=float)
+parser.add_argument("--gam",type=float)
+parser.add_argument("--epsilon",type=float)
+args = parser.parse_args()
 # %%
 sys.path.append(r'../../../HLsearch/')
 #set the parameters for the double pendulum
@@ -172,7 +179,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         d_coef = torch.tensor([0.05,0.05]).to(device).float()
         
         
-        loss = lagrangianforward(vhat,d_coef,zeta,eta,delta,dissip,x_t,device)
+        loss = lagrangianforward(vhat,d_coef,zeta,eta,delta,dissip,x_t,device)+lam*torch.norm(vhat,1)
         loss = torch.mean(loss**2)
         loss.backward()
         
@@ -180,7 +187,6 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         
         with torch.no_grad():
             v = vhat - lr * vhat.grad
-            v = proxSCAD(v,lam,3.7)
             vhat.grad = None
         loss_list.append(loss)
         
@@ -234,8 +240,10 @@ def ADMM_Prox_loop(coef, d_coef, prevcoef, Zeta, Eta, Delta, Dissip, xdot, bs, l
         # In this case, your lagrangianforward plays the role of P(x)
             d_coef = torch.tensor([0.05,0.05]).to(device).float()
             x.requires_grad = True
+            z.requires_grad = True
             loss = lagrangianforward(x, d_coef, zeta, eta, delta, dissip, q_t, device).flatten()
-            Rx = scad_penalty(x,lam)
+            #Rx = scad_penalty(x,lam)
+            Rx = torch.norm(x,p=1)
             L2_norm = loss-z-w/gam
             total_loss = 0.5*torch.norm(L2_norm,p=2)**2 + Rx/rho
             total_loss = total_loss.mean()
@@ -243,15 +251,21 @@ def ADMM_Prox_loop(coef, d_coef, prevcoef, Zeta, Eta, Delta, Dissip, xdot, bs, l
             with torch.no_grad():
                 x -= lr * x.grad
                 x.grad.zero_()
-            
+            print("loss:",loss.mean())
+            if torch.isnan(total_loss).item():
+                exit()
             loss_temp = lagrangianforward(x, d_coef, zeta, eta, delta, dissip, q_t, device).flatten()
             # Step 2: Update z using the proximal operator
-            z = lam2*epsilon/(2*epsilon+lam2)*(z/epsilon-z*(z**2+epsilon**2)**(-0.5)+2/lam2*(loss_temp-w/gam))
-            
+            #z = lam2*epsilon/(2*epsilon+lam2)*(z/epsilon-z*(z**2+epsilon**2)**(-0.5)+2/lam2*(loss_temp-w/gam))
+            z_loss = torch.norm(z)/mu+rho/2*torch.norm(loss_temp-z-w/lam,p=2)**2
+            z_loss.backward(retain_graph=True)
+            with torch.no_grad():
+                z -= lr * z.grad
+                z.grad.zero_()
             # Step 3: Update w
             w = w - rho*torch.norm(loss_temp-z,p=2)**2
         
-        loss_list.append(total_loss.item())
+        loss_list.append(loss.mean())
 
     return x, torch.tensor(loss_list).mean().item(), tl
 
@@ -411,9 +425,13 @@ for trial in range(total_trials):
     threshold_d = 0.001
     num_candidates_removed = 0
     stage = 1
-    lr = 1e-5
-    rho = 1
-    mu = 1e-3#from 1e-5 to 1e-1
+    lr=1e-6
+    lam = 1e-2
+    # lr = args.lr
+    # rho = args.rho
+    # mu = args.mu
+    # gam = args.gam
+    # epsilon = args.epsilon
     while True:
 
         # ... [Your existing training or optimization code goes here]
@@ -436,25 +454,28 @@ for trial in range(total_trials):
         #Training
         Epoch = 200
         i = 1
-        if lr < 0.0015:
-            lr += lr*0.5
+
         if len(xi_L) <= 25:
             reset_threshold = 400
             threshold = 0.01
         else:
             reset_threshold = 120
-        if rho < 1e4:
-            rho += 2
+        # if rho < 1e4:
+        #     rho += 2*rho
         #set the lam to zero when mask is equal to 11
         d_training = False
         temp = 1000
         if len(xi_L) == 6:
             threshold = 0
             lam = 0
+        elif len(xi_L) < 30:
+            lam = 1e-4
+        elif len(xi_L) < 50:
+            lam = 5e-3
         while(i<=Epoch):   
             #xi_L , xi_d, prevxi_L, prevxi_d, lossitem, q= SR_loop(xi_L,xi_d,prevxi_L,prevxi_d,Zeta,Eta,Delta,Dissip,Xdot,2500,lr,lam,d_training)
-            #xi_L,prevxi_L,lossitem,q = Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,device)
-            xi_L,lossitem,q = ADMM_Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,2500,lr,rho,mu,device)
+            xi_L,prevxi_L,lossitem,q = Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,device)
+            # xi_L,lossitem,q = ADMM_Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,1,lr,rho,mu,device,10,gam,epsilon)
             # with torch.autograd.profiler.profile(use_cuda=True) as prof:
             #     Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,device)  # Your function call here
             # print(prof)
@@ -475,46 +496,46 @@ for trial in range(total_trials):
 
             i+=1    
         surv_index = ((torch.abs(xi_L) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
-        expr = np.array(expr)[surv_index].tolist()
+        expr_out = np.array(expr)[surv_index].tolist()
 
-        xi_L =xi_L[surv_index].clone().detach().to(device).requires_grad_(True)
-        num_candidates_removed += len(prevxi_L) - len(xi_L)
+        xi_L_out =xi_L[surv_index].clone().detach().to(device).requires_grad_(True)
+        num_candidates_removed = len(prevxi_L) - len(xi_L_out)
         prevxi_L = xi_L.clone().detach()
-        mask = torch.ones(len(expr),device=device)
+        
 
         if num_candidates_removed >= reset_threshold:
             xi_L = torch.ones(len(expr), device=device).data.uniform_(5,7)
             prevxi_L = xi_L.clone().detach()
             num_candidates_removed = 0
 
-        xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=4)
+        xi_Lcpu = np.around(xi_L_out.detach().cpu().numpy(),decimals=4)
         xi_dcpu = np.around(xi_d.detach().cpu().numpy(),decimals=4)
-        L = HL.generateExpression(xi_Lcpu,expr)
+        L = HL.generateExpression(xi_Lcpu,expr_out)
         D = HL.generateExpression(xi_dcpu,d_expr)
-        print("expression length:\t",len(xi_L))
+        print("expression length:\t",len(xi_L_out))
         print("Result stage " + str(stage+2))
         print("removed candidates:", num_candidates_removed)
-        print("sanity check: ",check_candidates(expr))
+        print("sanity check: ",check_candidates(expr_out))
         print("The current success rate is ",successful_trials / (trial + 1) * 100,"%")
         stage += 1
         # Check the conditions
-        num_candidates = len(xi_L)  # Retrieve the current number of candidates
+        num_candidates = len(xi_L_out)  # Retrieve the current number of candidates
 
         # Call the check_candidates function and store its output
-        check_result = check_candidates(expr)  # Your existing check_candidates function call
+        check_result = check_candidates(expr_out)  # Your existing check_candidates function call
 
         # Check for success criteria
-        if num_candidates == 6 and check_result:
-            print(f"Trial {trial + 1} is successful.")
-            successful_trials += 1
-            break  # Exit the training loop for this trial
+        # if num_candidates == 6 and check_result:
+        #     print(f"Trial {trial + 1} is successful.")
+        #     successful_trials += 1
+        #     break  # Exit the training loop for this trial
 
-        # Check for termination criteria based on check_candidates output
-        if not check_result:
-            print(f"Trial {trial + 1} failed.")
-            print("The current success rate is ",successful_trials / (trial + 1) * 100,"%")
-            break  # Exit the training loop for this trial
-            #print the current sucess rate
+        # # Check for termination criteria based on check_candidates output
+        # if not check_result:
+        #     print(f"Trial {trial + 1} failed.")
+        #     print("The current success rate is ",successful_trials / (trial + 1) * 100,"%")
+        #     break  # Exit the training loop for this trial
+        #     #print the current sucess rate
             
 
 # Compute and display the success rate
