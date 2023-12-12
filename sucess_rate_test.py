@@ -125,7 +125,7 @@ def loss(pred, targ):
 
 # %%
 def clip(w, alpha):
-    clipped = torch.minimum(w,alpa)
+    clipped = torch.minimum(w,alpha)
     clipped = torch.maximum(clipped,-alpha)
     return clipped
 
@@ -179,7 +179,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         d_coef = torch.tensor([0.05,0.05]).to(device).float()
         
         
-        loss = lagrangianforward(vhat,d_coef,zeta,eta,delta,dissip,x_t,device)+lam*torch.norm(vhat,1)
+        loss = lagrangianforward(vhat,d_coef,zeta,eta,delta,dissip,x_t,device)
         loss = torch.mean(loss**2)
         loss.backward()
         
@@ -187,6 +187,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         
         with torch.no_grad():
             v = vhat - lr * vhat.grad
+            v = proxL1norm(v,lr*lam)
             vhat.grad = None
         loss_list.append(loss)
         
@@ -421,12 +422,12 @@ for trial in range(total_trials):
     d_mask = torch.ones(len(d_expr),device=device)
     xi_d = torch.ones(len(d_expr),device=device)*0
     prevxi_d = xi_d.clone().detach()
-    threshold = 0.001
+    threshold = 0.01
     threshold_d = 0.001
     num_candidates_removed = 0
     stage = 1
-    lr=1e-6
-    lam = 1e-2
+    lr=5e-6
+    lam = 1
     # lr = args.lr
     # rho = args.rho
     # mu = args.mu
@@ -496,46 +497,46 @@ for trial in range(total_trials):
 
             i+=1    
         surv_index = ((torch.abs(xi_L) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
-        expr_out = np.array(expr)[surv_index].tolist()
-
-        xi_L_out =xi_L[surv_index].clone().detach().to(device).requires_grad_(True)
-        num_candidates_removed = len(prevxi_L) - len(xi_L_out)
+        expr = np.array(expr)[surv_index].tolist()
+        xi_L =xi_L[surv_index].clone().detach().to(device).requires_grad_(True)
+        num_candidates_removed += len(prevxi_L) - len(xi_L)
         prevxi_L = xi_L.clone().detach()
-        
+        mask = torch.ones(len(expr),device=device)
+
 
         if num_candidates_removed >= reset_threshold:
             xi_L = torch.ones(len(expr), device=device).data.uniform_(5,7)
             prevxi_L = xi_L.clone().detach()
             num_candidates_removed = 0
 
-        xi_Lcpu = np.around(xi_L_out.detach().cpu().numpy(),decimals=4)
+        xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=4)
         xi_dcpu = np.around(xi_d.detach().cpu().numpy(),decimals=4)
-        L = HL.generateExpression(xi_Lcpu,expr_out)
+        L = HL.generateExpression(xi_Lcpu,expr)
         D = HL.generateExpression(xi_dcpu,d_expr)
-        print("expression length:\t",len(xi_L_out))
+        print("expression length:\t",len(xi_L))
         print("Result stage " + str(stage+2))
         print("removed candidates:", num_candidates_removed)
-        print("sanity check: ",check_candidates(expr_out))
+        print("sanity check: ",check_candidates(expr))
         print("The current success rate is ",successful_trials / (trial + 1) * 100,"%")
         stage += 1
         # Check the conditions
-        num_candidates = len(xi_L_out)  # Retrieve the current number of candidates
+        num_candidates = len(xi_L)  # Retrieve the current number of candidates
 
         # Call the check_candidates function and store its output
-        check_result = check_candidates(expr_out)  # Your existing check_candidates function call
+        check_result = check_candidates(expr)  # Your existing check_candidates function call
 
         # Check for success criteria
-        # if num_candidates == 6 and check_result:
-        #     print(f"Trial {trial + 1} is successful.")
-        #     successful_trials += 1
-        #     break  # Exit the training loop for this trial
+        if num_candidates == 6 and check_result:
+            print(f"Trial {trial + 1} is successful.")
+            successful_trials += 1
+            break  # Exit the training loop for this trial
 
-        # # Check for termination criteria based on check_candidates output
-        # if not check_result:
-        #     print(f"Trial {trial + 1} failed.")
-        #     print("The current success rate is ",successful_trials / (trial + 1) * 100,"%")
-        #     break  # Exit the training loop for this trial
-        #     #print the current sucess rate
+        # Check for termination criteria based on check_candidates output
+        if not check_result:
+            print(f"Trial {trial + 1} failed.")
+            print("The current success rate is ",successful_trials / (trial + 1) * 100,"%")
+            break  # Exit the training loop for this trial
+            #print the current sucess rate
             
 
 # Compute and display the success rate
