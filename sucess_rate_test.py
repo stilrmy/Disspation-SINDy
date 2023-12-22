@@ -43,8 +43,8 @@ print(f"Seed value: {seed_value}")
 save = False
 #set the environment for deciding the path to save the files
 environment = "server"
-sample_size = 5
-device = 'cuda:6'
+sample_size = 30
+device = 'cuda:0'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--lr",type=float)
@@ -176,7 +176,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         dissip = Dissip[:,:,i*bs:(i+1)*bs]
         
         x_t = torch.tensor(xdot[i*bs:(i+1)*bs,:]).to(device)
-        d_coef = torch.tensor([0.05,0.05]).to(device).float()
+        d_coef = torch.tensor([0.025,0.025]).to(device).float()
         
         
         loss = lagrangianforward(vhat,d_coef,zeta,eta,delta,dissip,x_t,device)
@@ -187,7 +187,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         
         with torch.no_grad():
             v = vhat - lr * vhat.grad
-            v = proxL1norm(v,lr*lam)
+            v = proxSCAD(v,lam,1)
             vhat.grad = None
         loss_list.append(loss)
         
@@ -348,7 +348,7 @@ def check_candidates(expr_temp):
 # Initialize variables to keep track of success and total trials
 total_trials = 100  # or any number you'd like
 successful_trials = 0
-
+lowest_candidate = 100
 # Loop for each trial
 for trial in range(total_trials):
     #set the random seed for reproducibility
@@ -426,8 +426,9 @@ for trial in range(total_trials):
     threshold_d = 0.001
     num_candidates_removed = 0
     stage = 1
-    lr=5e-6
-    lam = 1
+    lr=1e-6
+    lam = 0.1
+    
     # lr = args.lr
     # rho = args.rho
     # mu = args.mu
@@ -466,15 +467,16 @@ for trial in range(total_trials):
         #set the lam to zero when mask is equal to 11
         d_training = False
         temp = 1000
+        # lr += 2e-6
         if len(xi_L) == 6:
             threshold = 0
             lam = 0
-        elif len(xi_L) < 30:
-            lam = 1e-4
-        elif len(xi_L) < 50:
-            lam = 5e-3
+        # elif len(xi_L) < 30:
+        #     lam = 1e-4
+        # elif len(xi_L) < 50:
+        #     lam = 5e-3
         while(i<=Epoch):   
-            #xi_L , xi_d, prevxi_L, prevxi_d, lossitem, q= SR_loop(xi_L,xi_d,prevxi_L,prevxi_d,Zeta,Eta,Delta,Dissip,Xdot,2500,lr,lam,d_training)
+            # xi_L , xi_d, prevxi_L, prevxi_d, lossitem, q= SR_loop(xi_L,xi_d,prevxi_L,prevxi_d,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,d_training)
             xi_L,prevxi_L,lossitem,q = Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,device)
             # xi_L,lossitem,q = ADMM_Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,1,lr,rho,mu,device,10,gam,epsilon)
             # with torch.autograd.profiler.profile(use_cuda=True) as prof:
@@ -517,11 +519,13 @@ for trial in range(total_trials):
         print("Result stage " + str(stage+2))
         print("removed candidates:", num_candidates_removed)
         print("sanity check: ",check_candidates(expr))
-        print("The current success rate is ",successful_trials / (trial + 1) * 100,"%")
+        print("The current success rate is ",successful_trials / (trial + 1) * 100,"%", "with ",trial+1," trials")
+        print("lowest candidate is ",lowest_candidate)
         stage += 1
         # Check the conditions
         num_candidates = len(xi_L)  # Retrieve the current number of candidates
-
+        if num_candidates < lowest_candidate:
+            lowest_candidate = num_candidates
         # Call the check_candidates function and store its output
         check_result = check_candidates(expr)  # Your existing check_candidates function call
 
@@ -534,14 +538,14 @@ for trial in range(total_trials):
         # Check for termination criteria based on check_candidates output
         if not check_result:
             print(f"Trial {trial + 1} failed.")
-            print("The current success rate is ",successful_trials / (trial + 1) * 100,"%")
+            print("The current success rate is ",successful_trials / (trial + 1) * 100,"%", "with ",trial+1," trials")
             break  # Exit the training loop for this trial
             #print the current sucess rate
             
 
 # Compute and display the success rate
 success_rate = (successful_trials / total_trials) * 100
-print(f"The success rate is {{success_rate}}%.")
+print(f"The success rate is {{success_rate}}%. This is based on {total_trials} trials.")
 
 
 
