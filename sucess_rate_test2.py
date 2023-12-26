@@ -13,7 +13,7 @@ import sympy
 import torch
 import sys
 import HLsearch as HL
-import example_pendulum_double_pendulum as example_pendulum
+import example_pendulum_cart_pendulum as example_pendulum
 import time
 import random
 import torch.nn as nn

@@ -13,7 +13,7 @@ import sympy
 import torch
 import sys
 import HLsearch as HL
-import example_pendulum_double_pendulum as example_pendulum
+import example_pendulum_cart_pendulum as example_pendulum
 import time
 import random
 import torch.nn as nn
@@ -44,7 +44,7 @@ save = False
 #set the environment for deciding the path to save the files
 environment = "server"
 sample_size = 30
-device = 'cuda:0'
+device = 'cuda:2'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--lr",type=float)
@@ -187,7 +187,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         
         with torch.no_grad():
             v = vhat - lr * vhat.grad
-            v = proxSCAD(v,lam,1)
+            v = proxSCAD(v,lam,4)
             vhat.grad = None
         loss_list.append(loss)
         

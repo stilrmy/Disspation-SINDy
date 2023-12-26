@@ -4,7 +4,7 @@
 # In[5]:
 
 
-import example_pendulum_double_pendulum as example_pendulum
+import example_pendulum_cart_pendulum as example_pendulum
 import torch; torch.manual_seed(0)
 import torch.nn as nn
 import torch.nn.functional as F

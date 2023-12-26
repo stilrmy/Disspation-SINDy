@@ -42,7 +42,7 @@ def get_pendulum_data(n_ics,params):
 
     return data
 
-# code for visualization, it seperate the double pendulum into two single pendulums for NN processing to extract the states. And this part is abandoned so you prabably don't need to read it.
+
 def plot(n_ics,params):
     t, x, x2, X, Xdot = generate_pendulum_data(n_ics,params)
     print(x.shape)
@@ -66,18 +66,15 @@ def generate_data(func, time, init_values):
     sol = solve_ivp(func,[time[0],time[-1]],init_values,t_eval=time, method='RK45',rtol=1e-10,atol=1e-10)
     return sol.y.T, np.array([func(0,sol.y.T[i,:]) for i in range(sol.y.T.shape[0])],dtype=np.float64)
 
-def doublePendulum2_wrapper(params):
-    def doublePendulum2(t, y):
-        L1, L2, m1, m2, b1, b2 = params['L1'], params['L2'], params['m1'], params['m2'], params['b1'], params['b2']
+def cartPendulum_wrapper(params):
+    def cartPendulum(t, y):
+        M,m,R,k,d,b = params['M'],params['m'],params['R'],params['k'],params['d'],params['b']
+        x,theta,x_t,theta_t = y
+        x_tt = (m*R*theta_t**2*np.sin(theta)+m*g*np.sin(theta)*np.cos(theta)-k*x-d*x_t+b*theta_t*np.cos(theta)/R)/(M+m*np.sin(theta)**2)
+        theta_tt = (-m*R*theta_t**2*np.sin(theta)*np.cos(theta)-(M+m)*g*np.sin(theta)+k*x*np.cos(theta)+d*x_t*np.cos(theta)-(1+M/m)*b*theta_t/R)/(R*(M+m*np.sin(theta)**2))
 
-        q1,q2,q1_t,q2_t = y
-
-        q1_2t = -b1*L2*q1_t/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) + b2*L1*q2_t*np.cos(q1 - q2)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) - g*L1*L2*m1*np.sin(q1)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) - g*L1*L2*m2*np.sin(q1)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) + g*L1*L2*m2*np.sin(q2)*np.cos(q1 - q2)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) - L1**2*L2*m2*q1_t**2*np.sin(q1 - q2)*np.cos(q1 - q2)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) - L1*L2**2*m2*q2_t**2*np.sin(q1 - q2)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2)
-
-        q2_2t =  b1*L2*m2*q1_t*np.cos(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) - b2*L1*m1*q2_t/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) - b2*L1*m2*q2_t/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + g*L1*L2*m1*m2*np.sin(q1)*np.cos(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) - g*L1*L2*m1*m2*np.sin(q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + g*L1*L2*m2**2*np.sin(q1)*np.cos(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) - g*L1*L2*m2**2*np.sin(q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + L1**2*L2*m1*m2*q1_t**2*np.sin(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + L1**2*L2*m2**2*q1_t**2*np.sin(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + L1*L2**2*m2**2*q2_t**2*np.sin(q1 - q2)*np.cos(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2)
-
-        return q1_t, q2_t, q1_2t, q2_2t
-    return doublePendulum2
+        return x_t,theta_t,x_tt,theta_tt
+    return cartPendulum
 
 
 def generate_pendulum_data(n_ics,params):
@@ -85,8 +82,7 @@ def generate_pendulum_data(n_ics,params):
         np.random.seed(params['random_seed'])
         random_seed = np.random.randint(low=1,high=100,size=(n_ics))
         print('random seeds are: ' ,random_seed)
-    print('generating pendulum data, pendulum type: double pendulum')
-    f  = lambda z, t: [z[1], -9.81*np.sin(z[0])]
+    print('generating pendulum data, pendulum type: cart pendulum')
     'z[0]-theta z[1]-theta_dot'
     t = np.arange(0, 50, .02)
     '500 time steps'
@@ -98,16 +94,13 @@ def generate_pendulum_data(n_ics,params):
     while (i < n_ics):
         if params['specific_random_seed'] == True:
             np.random.seed(random_seed[i])
-        theta1 = np.random.uniform(-np.pi/2, np.pi/2)
+        theta = np.random.uniform(-np.pi/2, np.pi/2)
         if params['specific_random_seed'] == True:
             np.random.seed(random_seed[i])
         thetadot = np.random.uniform(0,0)
-        if params['specific_random_seed'] == True:
-            np.random.seed(random_seed[i])
-        theta2 = np.random.uniform(-np.pi/2, np.pi/2)
-        y0=np.array([theta1, theta2, thetadot, thetadot])
-        doublePendulum2 = doublePendulum2_wrapper(params)
-        x,xdot = generate_data(doublePendulum2,t,y0)
+        y0=np.array([0, theta, 0, thetadot])
+        cartPendulum = cartPendulum_wrapper(params)
+        x,xdot = generate_data(cartPendulum,t,y0)
         X.append(x)
         Xdot.append(xdot)
         i += 1
@@ -155,21 +148,23 @@ def pendulum_to_movie(X,Xdot,n_ics,params):
     n = 50
     y1,y2 = np.meshgrid(np.linspace(-2.5,2.5,n),np.linspace(2.5,-2.5,n))
     y3,y4 = np.meshgrid(np.linspace(-2.5,2.5,n),np.linspace(2.5,-2.5,n))
-    create_image = lambda theta,L,attenuation_rate : np.exp(-((y1-L*np.cos(theta-np.pi/2))**2 + (y2-L*np.sin(theta-np.pi/2))**2)*attenuation_rate)
+
 
 
     x = np.zeros((n_ics*n_samples, n, n))
     x2 = np.zeros((n_ics*n_samples, n, n))
     center_dot = np.zeros([50,50])
-    center_dot[24:25,24:25] = 255
+    center_dot
     for i in range(X.shape[0]):
+        theta = X[i,0]
         if params['changing_length'] == True:
             len = random.uniform(0.2,1)
         else:
             len = 1
-        x[i, :, :] = create_image(X[i, 0], params['L1'],attenuation_rate)*255+center_dot
-        x2[i, :, :] = create_image(X[i, 1], params['L1'],attenuation_rate)*255+center_dot
-    return x,x2
+        x[i, :, :] = create_image(X[i, 0], params['R'],attenuation_rate)*255
+        x[i,X[i,1]-3:X[i,1]+3,25:28]=255
+    
+    return x
 
 
 # def compare(params):
