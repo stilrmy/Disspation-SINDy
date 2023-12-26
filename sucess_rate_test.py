@@ -44,7 +44,7 @@ save = False
 #set the environment for deciding the path to save the files
 environment = "server"
 sample_size = 30
-device = 'cuda:0'
+device = 'cuda:2'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--lr",type=float)
@@ -187,7 +187,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         
         with torch.no_grad():
             v = vhat - lr * vhat.grad
-            v = proxSCAD(v,lam,1)
+            v = proxSCAD(v,lam,6)
             vhat.grad = None
         loss_list.append(loss)
         
