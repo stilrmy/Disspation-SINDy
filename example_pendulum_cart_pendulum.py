@@ -3,9 +3,10 @@ import random
 import os
 import csv
 from scipy.integrate import odeint
-from PIL import Image
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from moviepy.editor import VideoClip
 # Pendulum rod lengths (m), bob masses (kg).
 
 # The gravitational acceleration (m.s-2).
@@ -17,12 +18,10 @@ density = 200 #density of the bar in the image
 def get_pendulum_data(n_ics,params):
     # The gravitational acceleration (m.s-2).
     g = 9.81
-    t,x,x2,X,Xdot = generate_pendulum_data(n_ics,params)
+    t,X,Xdot = generate_pendulum_data(n_ics,params)
 
     data = {}
     data['t'] = t
-    data['x'] = x.reshape((n_ics*t.size, -1))
-    data['x2'] = x2.reshape((n_ics*t.size, -1))
     data['z'] = X[:,:2]
     data['dz'] = X[:,2:]
     data['ddz'] = Xdot[:,2:]
@@ -43,22 +42,7 @@ def get_pendulum_data(n_ics,params):
     return data
 
 
-def plot(n_ics,params):
-    t, x, x2, X, Xdot = generate_pendulum_data(n_ics,params)
-    print(x.shape)
-    imglist = []
-    for i in range(500):
-        image = Image.fromarray(x[i,:,:])
-        print(image)
-        imglist.append(image)
-    imglist[0].save('save_name.gif', save_all=True, append_images=imglist, duration=0.1)
-    imglist = []
-    for i in range(500):
-        image = Image.fromarray(x2[i,:,:])
-        print(image)
-        imglist.append(image)
-    imglist[0].save('save_name2.gif', save_all=True, append_images=imglist, duration=0.1)
-    return
+
 
 
 
@@ -88,13 +72,17 @@ def generate_pendulum_data(n_ics,params):
     '500 time steps'
     i = 0
     X, Xdot = [], []
+    min_angle_limit = 1
     #shape of X and Xdot: (50000,4)
     #structure of X:q1,q2,q1_t,q2_t
     ##structure of Xdot:q1_t,q2_t,q1_tt,q2_tt
     while (i < n_ics):
         if params['specific_random_seed'] == True:
             np.random.seed(random_seed[i])
-        theta = np.random.uniform(-np.pi/2, np.pi/2)
+        if np.random.rand() > 0.5:
+            theta = np.random.uniform(-np.pi/2, -min_angle_limit)
+        else:
+            theta = np.random.uniform(min_angle_limit, np.pi/2)
         if params['specific_random_seed'] == True:
             np.random.seed(random_seed[i])
         thetadot = np.random.uniform(0,0)
@@ -119,86 +107,56 @@ def generate_pendulum_data(n_ics,params):
                 Xdot_noise[:,i] = Xdot[:,i]+noise
             X = X_noise
             Xdot = Xdot_noise
-            x,x2 = pendulum_to_movie(X_noise,Xdot_noise,n_ics,params)
-    x,x2 = pendulum_to_movie(X,Xdot,n_ics,params)
-    return t,x,x2,X,Xdot
-
-
-# code for visualization, it seperate the double pendulum into two single pendulums for NN processing to extract the states. And this part is abandoned so you prabably don't need to read it.
-def generate_bar(theta1,theta2,L1,L2,params):
-    bar = np.zeros([50,50])
-    if params['sample_mode'] == 'bar':
-        n = 240
-        y1,y2 = np.meshgrid(np.linspace(-2.5,2.5,n),np.linspace(2.5,-2.5,n))
-        LEN = np.linspace(0,L1,density)
-        attenuation_rate0 = 400
-        create_bar = lambda theta1,theta2,L,attenuation_rate:np.exp(-((y1-L*np.cos(theta1-np.pi/2))**2 + (y2-L*np.sin(theta1-np.pi/2))**2)*attenuation_rate0)
-        for L in LEN:
-            bar += create_bar(theta1,theta2,L,attenuation_rate0)*255
-        create_bar_2 = lambda theta1,theta2,L1,L,attenuation_rate:np.exp(-((y1-L*np.cos(theta2-np.pi/2)-L1*np.cos(theta1-np.pi/2))**2 + (y2-L*np.sin(theta2-np.pi/2)-L1*np.sin(theta1-np.pi/2))**2)*attenuation_rate0)
-        LEN = np.linspace(0,L2,density)
-        for L in LEN:
-            bar += create_bar_2(theta1,theta2,L1,L,attenuation_rate0)*255
-    return bar
-
-
-# code for visualization, it seperate the double pendulum into two single pendulums for NN processing to extract the states. And this part is abandoned so you prabably don't need to read it.
-def pendulum_to_movie(X,Xdot,n_ics,params):
-    n_samples = 2500
-    n = 50
-    y1,y2 = np.meshgrid(np.linspace(-2.5,2.5,n),np.linspace(2.5,-2.5,n))
-    y3,y4 = np.meshgrid(np.linspace(-2.5,2.5,n),np.linspace(2.5,-2.5,n))
+    return t,X,Xdot
 
 
 
-    x = np.zeros((n_ics*n_samples, n, n))
-    x2 = np.zeros((n_ics*n_samples, n, n))
-    center_dot = np.zeros([50,50])
-    center_dot
-    for i in range(X.shape[0]):
-        theta = X[i,0]
-        if params['changing_length'] == True:
-            len = random.uniform(0.2,1)
-        else:
-            len = 1
-        x[i, :, :] = create_image(X[i, 0], params['R'],attenuation_rate)*255
-        x[i,X[i,1]-3:X[i,1]+3,25:28]=255
-    
-    return x
+#code for plotting the cart-pendulum to movie
+params = {}
+params['M'] = 1
+params['m'] = 1
+params['R'] = 1
+params['k'] = 1
+params['d'] = 0.1
+params['b'] = 0.1
+params['adding_noise'] = False
+params['specific_random_seed'] = False
+# Constants
+length_of_pendulum =  params['R']  
+data = get_pendulum_data(1,params)
+data = data['z']
+# Function to update the plot for each frame
+def update(frame):
+    plt.cla()  # Clear the current axes
+    cart_pos = data[frame, 0]
+    pendulum_angle = data[frame, 1]
+    pendulum_x = cart_pos + length_of_pendulum * np.sin(pendulum_angle)
+    pendulum_y = -length_of_pendulum * np.cos(pendulum_angle)
 
+    # Draw cart
+    plt.plot(cart_pos, 0, 'ks', markersize=12)  # 'ks' for black square
 
-# def compare(params):
-#     #generate data use double_pendulum and double_pendulum2 respectively with same initial values, and compare the results
-#     t,x,x2,X,Xdot,X_,Xdot_ = generate_pendulum_data2(1,params)
-#     #plot the results
-#     plt.figure()
-#     plt.subplot(2,2,1)
-#     plt.plot(t,X[:,0],label='theta1')
-#     plt.plot(t,X_[:,0],label='theta1_')
-#     plt.legend()
-#     plt.subplot(2,2,2)
-#     plt.plot(t,X[:,1],label='theta2')
-#     plt.plot(t,X_[:,1],label='theta2_')
-#     plt.legend()
-#     plt.subplot(2,2,3)
-#     plt.plot(t,X[:,2],label='theta1_t')
-#     plt.plot(t,X_[:,2],label='theta1_t_')
-#     plt.legend()
-#     plt.subplot(2,2,4)
-#     plt.plot(t,X[:,3],label='theta2_t')
-#     plt.plot(t,X_[:,3],label='theta2_t_')
-#     plt.legend()
-#     plt.show()
-#     #save the figure
-#     plt.savefig('compare.png')
+    # Draw pendulum
+    plt.plot([cart_pos, pendulum_x], [0, pendulum_y], 'r-')  # Red line for pendulum
+    plt.plot(pendulum_x, pendulum_y, 'ro')  # Red dot for pendulum bob
 
-# params = {}
-# params['sample_mode'] = 'dot'
-# params['adding_noise'] = False
-# params['changing_length'] = False
-# params['specific_random_seed'] = True
-# params['random_seed'] = 3614
+    # Setting plot limits
+    plt.xlim(-2, 2)
+    plt.ylim(-2, 2)
+    plt.gca().set_aspect('equal', adjustable='box')
 
-# compare(params)
+# Create an animation
+fig, ax = plt.subplots()
+frames = len(data)  # Total number of frames in the animation
+ani = FuncAnimation(fig, update, frames=frames, interval=20)
 
+# Convert to a movie file using MoviePy
+def make_frame(t):
+    update(int(t * 50))  # Assuming 50 fps
+    fig.canvas.draw()
+    return np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
+animation = VideoClip(make_frame, duration=frames / 50)
+animation.write_videofile("cart_pendulum_animation.mp4", fps=50)
+
+print("Movie created successfully!")
