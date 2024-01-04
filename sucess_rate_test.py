@@ -8,7 +8,7 @@ from scipy.integrate import solve_ivp
 from xLSINDy_sp import *
 from sympy.physics.mechanics import *
 from sympy import *
-from Data_generator_py import image_process
+
 import sympy
 import torch
 import sys
@@ -43,7 +43,7 @@ print(f"Seed value: {seed_value}")
 save = False
 #set the environment for deciding the path to save the files
 environment = "server"
-sample_size = 30
+sample_size = 2
 device = 'cuda:2'
 
 parser = argparse.ArgumentParser()
@@ -62,14 +62,12 @@ params['noise_type'] = 'angle_noise'
 params['noiselevel'] = 2e-2
 params['changing_length'] = False
 params['specific_random_seed'] = False
-params['c'] = float(0.18)
-params['g'] = float(9.81)
-params['L1'] = float(1.5)
-params['L2'] = float(1.5)
-params['m1'] = float(1)
-params['m2'] = float(1)
-params['b1'] = float(0.05)
-params['b2'] = float(0.05)
+params['M'] = 1
+params['m'] = 1
+params['R'] = 1
+params['k'] = 1
+params['d'] = 0.1
+params['b'] = 0.1
 if environment == 'laptop':
     root_dir =R'C:\Users\87106\OneDrive\sindy\progress'
 elif environment == 'desktop':
@@ -77,7 +75,11 @@ elif environment == 'desktop':
 elif environment == 'server':
     root_dir = R'/mnt/ssd1/stilrmy/Autoencoder-conservtive_expression'
 #just named as image_process, but actually it is a simple raw data pass through now
-x,dx,ddx = image_process(sample_size,params)
+#x is [time,x and theta]
+data = example_pendulum.get_pendulum_data(sample_size,params)
+x = data['z']
+dx = data['dz']
+ddx = data['ddz']
 
 
 # %%
@@ -96,6 +98,8 @@ print(Xdot.shape)
 X = X.astype('float32')
 Xdot = Xdot.astype('float32')
 
+
+exit()
 # %%
 #setting the states and states derivatives
 states_dim = 4

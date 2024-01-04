@@ -11,13 +11,10 @@ from moviepy.editor import VideoClip
 
 # The gravitational acceleration (m.s-2).
 g = 9.81
-tau = 0
-attenuation_rate = 100
 
-density = 200 #density of the bar in the image
+
 def get_pendulum_data(n_ics,params):
-    # The gravitational acceleration (m.s-2).
-    g = 9.81
+
     t,X,Xdot = generate_pendulum_data(n_ics,params)
 
     data = {}
@@ -111,52 +108,52 @@ def generate_pendulum_data(n_ics,params):
 
 
 
-#code for plotting the cart-pendulum to movie
-params = {}
-params['M'] = 1
-params['m'] = 1
-params['R'] = 1
-params['k'] = 1
-params['d'] = 0.1
-params['b'] = 0.1
-params['adding_noise'] = False
-params['specific_random_seed'] = False
-# Constants
-length_of_pendulum =  params['R']  
-data = get_pendulum_data(1,params)
-data = data['z']
-# Function to update the plot for each frame
-def update(frame):
-    plt.cla()  # Clear the current axes
-    cart_pos = data[frame, 0]
-    pendulum_angle = data[frame, 1]
-    pendulum_x = cart_pos + length_of_pendulum * np.sin(pendulum_angle)
-    pendulum_y = -length_of_pendulum * np.cos(pendulum_angle)
+# #code for plotting the cart-pendulum to movie
+# params = {}
+# params['M'] = 1
+# params['m'] = 1
+# params['R'] = 1
+# params['k'] = 1
+# params['d'] = 0.1
+# params['b'] = 0.1
+# params['adding_noise'] = False
+# params['specific_random_seed'] = False
+# # Constants
+# length_of_pendulum =  params['R']  
+# data = get_pendulum_data(1,params)
+# data = data['z']
+# # Function to update the plot for each frame
+# def update(frame):
+#     plt.cla()  # Clear the current axes
+#     cart_pos = data[frame, 0]
+#     pendulum_angle = data[frame, 1]
+#     pendulum_x = cart_pos + length_of_pendulum * np.sin(pendulum_angle)
+#     pendulum_y = -length_of_pendulum * np.cos(pendulum_angle)
 
-    # Draw cart
-    plt.plot(cart_pos, 0, 'ks', markersize=12)  # 'ks' for black square
+#     # Draw cart
+#     plt.plot(cart_pos, 0, 'ks', markersize=12)  # 'ks' for black square
 
-    # Draw pendulum
-    plt.plot([cart_pos, pendulum_x], [0, pendulum_y], 'r-')  # Red line for pendulum
-    plt.plot(pendulum_x, pendulum_y, 'ro')  # Red dot for pendulum bob
+#     # Draw pendulum
+#     plt.plot([cart_pos, pendulum_x], [0, pendulum_y], 'r-')  # Red line for pendulum
+#     plt.plot(pendulum_x, pendulum_y, 'ro')  # Red dot for pendulum bob
 
-    # Setting plot limits
-    plt.xlim(-2, 2)
-    plt.ylim(-2, 2)
-    plt.gca().set_aspect('equal', adjustable='box')
+#     # Setting plot limits
+#     plt.xlim(-2, 2)
+#     plt.ylim(-2, 2)
+#     plt.gca().set_aspect('equal', adjustable='box')
 
-# Create an animation
-fig, ax = plt.subplots()
-frames = len(data)  # Total number of frames in the animation
-ani = FuncAnimation(fig, update, frames=frames, interval=20)
+# # Create an animation
+# fig, ax = plt.subplots()
+# frames = len(data)  # Total number of frames in the animation
+# ani = FuncAnimation(fig, update, frames=frames, interval=20)
 
-# Convert to a movie file using MoviePy
-def make_frame(t):
-    update(int(t * 50))  # Assuming 50 fps
-    fig.canvas.draw()
-    return np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape(fig.canvas.get_width_height()[::-1] + (3,))
+# # Convert to a movie file using MoviePy
+# def make_frame(t):
+#     update(int(t * 50))  # Assuming 50 fps
+#     fig.canvas.draw()
+#     return np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
-animation = VideoClip(make_frame, duration=frames / 50)
-animation.write_videofile("cart_pendulum_animation.mp4", fps=50)
+# animation = VideoClip(make_frame, duration=frames / 50)
+# animation.write_videofile("cart_pendulum_animation.mp4", fps=50)
 
-print("Movie created successfully!")
+# print("Movie created successfully!")
