@@ -187,7 +187,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         
         with torch.no_grad():
             v = vhat - lr * vhat.grad
-            v = proxSCAD(v,lam,6)
+            v = proxSCAD(v,lam,4)
             vhat.grad = None
         loss_list.append(loss)
         
@@ -426,7 +426,7 @@ for trial in range(total_trials):
     threshold_d = 0.001
     num_candidates_removed = 0
     stage = 1
-    lr=1e-6
+    lr=1e-8
     lam = 0.1
     
     # lr = args.lr
