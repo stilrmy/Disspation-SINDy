@@ -43,8 +43,8 @@ print(f"Seed value: {seed_value}")
 save = False
 #set the environment for deciding the path to save the files
 environment = "server"
-sample_size = 2
-device = 'cuda:2'
+sample_size = 1
+device = 'cuda:3'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--lr",type=float)
@@ -99,7 +99,7 @@ X = X.astype('float32')
 Xdot = Xdot.astype('float32')
 
 
-exit()
+
 # %%
 #setting the states and states derivatives
 states_dim = 4
@@ -180,7 +180,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         dissip = Dissip[:,:,i*bs:(i+1)*bs]
         
         x_t = torch.tensor(xdot[i*bs:(i+1)*bs,:]).to(device)
-        d_coef = torch.tensor([0.025,0.025]).to(device).float()
+        d_coef = torch.tensor([0.05,0.05]).to(device).float()
         
         
         loss = lagrangianforward(vhat,d_coef,zeta,eta,delta,dissip,x_t,device)
@@ -191,7 +191,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         
         with torch.no_grad():
             v = vhat - lr * vhat.grad
-            v = proxSCAD(v,lam,4)
+            v = proxL1norm(v,lam*lr)
             vhat.grad = None
         loss_list.append(loss)
         
@@ -303,7 +303,7 @@ def SR_loop(coef,d_coef, prevcoef, predcoef, Zeta, Eta, Delta,Dissip, xdot, bs, 
         delta = Delta[:,:,i*bs:(i+1)*bs]
         dissip = Dissip[:,:,i*bs:(i+1)*bs]
         x_t = torch.tensor(xdot[i*bs:(i+1)*bs,:]).to(device)
-        vdhat_ = torch.tensor([0.025,0.025]).to(device).float()
+        vdhat_ = torch.tensor([0.05,0.05]).to(device).float()
         #forward
         lossval = lagrangianforward(vhat,vdhat_,zeta,eta,delta,dissip,x_t,device)
         #lossval = torch.mean(lossval[0,:]**2)+torch.mean(lossval[1,:]**2)
@@ -340,11 +340,11 @@ def SR_loop(coef,d_coef, prevcoef, predcoef, Zeta, Eta, Delta,Dissip, xdot, bs, 
 # %%
 #a sanity check to see if any of the right candiates are missing
 def check_candidates(expr_temp):
-    candidates = ['x0_t**2', 'x1_t**2', 'cos(x0)', 'cos(x1)', 'x0_t*x1_t*cos(x0)*cos(x1)', 'x0_t*x1_t*sin(x0)*sin(x1)']
+    candidates = ['1','x0**2','x0_t**2', 'x1_t**2', 'cos(x1)', 'x0_t*x1_t*cos(x1)']
     for candidate in candidates:
         if candidate not in expr_temp:
-            return False
             print('candidate {} not in expr_temp'.format(candidate))
+            return False
     return True
 
 # %%
@@ -376,16 +376,19 @@ for trial in range(total_trials):
     # ... [Your existing code for setting up the problem, like building function expressions, goes here]
     # build function expression for the library in str
     exprdummy = HL.buildFunctionExpressions(1,states_dim,states,use_sine=True)
+    statenorm = exprdummy[0:2]
     polynom = exprdummy[2:4]
     trig = exprdummy[4:]
+    print(polynom)
+    statenom = HL.buildFunctionExpressions(2,len(statenorm),statenorm)
     polynom = HL.buildFunctionExpressions(2,len(polynom),polynom)
     trig = HL.buildFunctionExpressions(2, len(trig),trig)
     product = []
     for p in polynom:
         for t in trig:
             product.append(p + '*' + t)
-    expr = polynom + trig + product
-    expr = np.array(expr)
+    expr = polynom + trig + product + statenom
+    
     #check Adam's xLSINDy paper for why we need to delete some of the expressions
     i2 = np.where(expr == 'x0_t**2*cos(x0)**2')[0]
     i3 = np.where(expr == 'x0_t**2*cos(x1)**2')[0]
@@ -404,6 +407,12 @@ for trial in range(total_trials):
     idx = np.delete(idx,[i2,i3,i7,i8,i9,i10,i11,i12,i13,i14,i15,i16,i17])
 
     expr = np.delete(expr,[i2,i3,i7,i8,i9,i10,i11,i12,i13,i14,i15,i16,i17])
+    #add the constant term if it is not in the expression
+    if '1' not in expr:
+        expr = np.append(expr,'1')
+    else:
+        print('constant term already in the expression')
+    print("initial candidate check:",check_candidates(expr))
     #expr = ['x0_t**2','x1_t**2','cos(x0)','cos(x1)','x0_t*x1_t*cos(x0)*cos(x1)','x0_t*x1_t*sin(x0)*sin(x1)']
     #library function expression for the dissipation function in str
     #d_expr = [ 'x0_t','x0_t**2','x0_t**3','x1_t','x1_t**2','x1_t**3','x0_t*x1_t']
@@ -431,7 +440,7 @@ for trial in range(total_trials):
     num_candidates_removed = 0
     stage = 1
     lr=1e-6
-    lam = 0.1
+    lam = 1e-2
     
     # lr = args.lr
     # rho = args.rho
@@ -462,10 +471,10 @@ for trial in range(total_trials):
         i = 1
 
         if len(xi_L) <= 25:
-            reset_threshold = 400
+            reset_threshold = 10
             threshold = 0.01
         else:
-            reset_threshold = 120
+            reset_threshold = 30
         # if rho < 1e4:
         #     rho += 2*rho
         #set the lam to zero when mask is equal to 11
@@ -480,8 +489,8 @@ for trial in range(total_trials):
         # elif len(xi_L) < 50:
         #     lam = 5e-3
         while(i<=Epoch):   
-            # xi_L , xi_d, prevxi_L, prevxi_d, lossitem, q= SR_loop(xi_L,xi_d,prevxi_L,prevxi_d,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,d_training)
-            xi_L,prevxi_L,lossitem,q = Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,device)
+            xi_L , xi_d, prevxi_L, prevxi_d, lossitem, q= SR_loop(xi_L,xi_d,prevxi_L,prevxi_d,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,d_training)
+            # xi_L,prevxi_L,lossitem,q = Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,device)
             # xi_L,lossitem,q = ADMM_Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,1,lr,rho,mu,device,10,gam,epsilon)
             # with torch.autograd.profiler.profile(use_cuda=True) as prof:
             #     Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,device)  # Your function call here
