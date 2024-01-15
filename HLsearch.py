@@ -146,11 +146,22 @@ def buildTimeDerivativeMatrixFromFunctions(data, data_t, function_description, d
         Gamma.append(column)
     return np.array(Gamma).T
 
-def generateExpression(coefficient_vector,function_description):
+# def generateExpression(coefficient_vector,function_description):
+#     ret = ''
+#     for i in range(len(coefficient_vector)):
+#         ret = ret + str(coefficient_vector[i]) + '*' + str(function_description[i])
+#         ret = ret + ' + '
+#     return ret
+
+
+def generateExpression(coefficient_vector,function_description,threshold = 1e-8):
     ret = ''
-    for i in range(len(coefficient_vector)):
-        ret = ret + str(coefficient_vector[i]) + '*' + str(function_description[i])
-        ret = ret + ' + '
+    for coef,func in zip(coefficient_vector,function_description):
+        if abs(coef)>threshold:
+            if ret!='' and coef>=0:
+                ret = ret + '+'
+            ret = ret + str(coef) + '*' + str(func)
+    if ret != '' : ret = sympify(ret) 
     return ret
 
 

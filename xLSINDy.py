@@ -7,12 +7,11 @@ from sympy import symbols, simplify, derive_by_array
 
 import sympy
 import torch
-import torch.jit as jit
 import sys
 sys.path.append(r'../../HLsearch/')
 
 
-def LagrangianLibraryTensor(x, xdot, expr, d_expr, states, states_dot,device, scaling=False, scales=None):
+def LagrangianLibraryTensor(x, xdot, expr, states, states_dot, scaling=False, scales=None):
     """
     A function dedicated to build time-series tensor for the lagrangian equation.
     The lagrangian equation is described as follow
@@ -32,129 +31,67 @@ def LagrangianLibraryTensor(x, xdot, expr, d_expr, states, states_dot,device, sc
     Delta                   : time-series of derivative of basis functions w.r.t q 
     """
     from torch import cos, sin
-
     x = torch.from_numpy(x)
     xdot = torch.from_numpy(xdot)
-    n = len(states)#number of states
-    q = sympy.Array(np.array(sympy.Matrix(states[:n//2])).squeeze().tolist())#states(x0,x1,for double pendulum)
-    qdot = sympy.Array(np.array(sympy.Matrix(states[n//2:])).squeeze().tolist())#states_dot(x0_dot,x1_dot,for double pendulum)
+    n = len(states)
+    q = sympy.Array(np.array(sympy.Matrix(states[:n//2])).squeeze().tolist())
+    qdot = sympy.Array(
+        np.array(sympy.Matrix(states[n//2:])).squeeze().tolist())
     phi = sympy.Array(np.array(sympy.Matrix(expr)).squeeze().tolist())
-    d = sympy.Array(np.array(sympy.Matrix(d_expr)).squeeze().tolist())
     phi_q = derive_by_array(phi, q)
-    # print(phi_q.shape)
-    # print(q)
-    # print(qdot)
-    
-
-
     phi_qdot = derive_by_array(phi, qdot)
     phi_qdot2 = derive_by_array(phi_qdot, qdot)
     phi_qdotq = derive_by_array(phi_qdot, q)
-    d_qdot = derive_by_array(d, qdot)
-    # print("dissip_qdot",d_qdot)
-    # print("phi_q",phi_q)
-    # print("phi_qdot", phi_qdot)
-    # print("phi_qdot2",phi_qdot2)
-    # print("phi_qdotq",phi_qdotq)
-    # print("dissip_qdot_shape",d_qdot.shape)
 
-    l = x.shape[0]
-    # if len(np.array(phi_qdot2).shape) == 1:
-    #     j = int(np.array(phi_qdot2).shape[0])
-    #     Delta = torch.ones(j, l,device=device)
-    #     Zeta = torch.ones(j, l,device=device)
-    #     Eta = torch.ones(j, l,device=device)
-    # else:
     i, j, k = np.array(phi_qdot2).shape
-    p,q = np.array(d_qdot).shape
-    Delta = torch.ones(j, k, l,device=device)
-    Zeta = torch.ones(i, j, k, l,device=device)
-    Eta = torch.ones(i, j, k, l,device=device)
-    Dissip = torch.ones(p,q, l,device=device)
-
+    l = x.shape[0]
+    Delta = torch.ones(j, k, l)
+    Zeta = torch.ones(i, j, k, l)
+    Eta = torch.ones(i, j, k, l)
 
     for idx in range(len(states)):
         locals()[states[idx]] = x[:, idx]
-        "adding new variables x0/x1.... at time series"
-        'combine with the eval() to compute the value'
         locals()[states_dot[idx]] = xdot[:, idx]
-
-    
-    for n in range(p):
-        for m in range(q):
-            dissip = eval(str(d_qdot[n,m]))
-            #turn the dissip into tensor if it is int
-            if(isinstance(dissip, int)):
-                dissip = torch.tensor(dissip)
-                Dissip[n,m,:] = dissip*Dissip[n,m,:]               
-            else:
-                dissip = dissip.to(device).float()
-                # scales = torch.max(dissip) - torch.min(dissip)
-                # dissip = dissip/scales
-                Dissip[n,m,:] = dissip
-
-
 
     for n in range(j):
         for o in range(k):
             delta = eval(str(phi_q[n, o]))
-            'time series of the value of phi_q'
             if(isinstance(delta, int)):
                 Delta[n, o, :] = delta*Delta[n, o, :]
             else:
-                delta = delta.to(device).float()
-                # scales = torch.max(delta) - torch.min(delta)
-                # delta = delta/scales
+                # Feature Scaling
+                if(scaling == True):
+                    scales = torch.max(delta) - torch.min(delta)
+                    delta = delta/scales
                 Delta[n, o, :] = delta
-            # else:
-            #     # Feature Scaling
-            #     if(scaling == True):
-            #         scales = torch.max(delta) - torch.min(delta)
-            #         delta = delta/scales
-            #     Delta[n, o, :] = delta
 
     for m in range(i):
         for n in range(j):
             for o in range(k):
                 zeta = eval(str(phi_qdot2[m, n, o]))
                 eta = eval(str(phi_qdotq[m, n, o]))
+
                 if(isinstance(zeta, int)):
-                    zeta = torch.tensor(zeta)
                     Zeta[m, n, o, :] = zeta*Zeta[m, n, o, :]
                 else:
-                    zeta = zeta.to(device).float()
-                    # scales = torch.max(zeta) - torch.min(zeta)
-                    # zeta = zeta/scales
+                    # Feature Scaling
+                    if(scaling == True):
+                        scales = torch.max(zeta) - torch.min(zeta)
+                        zeta = zeta/scales
                     Zeta[m, n, o, :] = zeta
+
                 if(isinstance(eta, int)):
-                    eta = torch.tensor(eta)
                     Eta[m, n, o, :] = eta*Eta[m, n, o, :]
                 else:
-                    eta = eta.to(device).float()
-                    # scales = torch.max(eta) - torch.min(eta)
-                    # eta = eta/scales
+                    # Feature Scaling
+                    if(scaling == True):
+                        scales = torch.max(eta) - torch.min(eta)
+                        eta = eta/scales
                     Eta[m, n, o, :] = eta
-                # if(isinstance(zeta, int)):
-
-                # else:
-                #     # Feature Scaling
-                #     if(scaling == True):
-                #         scales = torch.max(zeta) - torch.min(zeta)
-                #         zeta = zeta/scales
-                #     Zeta[m, n, o, :] = zeta
-
-                # if(isinstance(eta, int)):
-
-                # else:
-                #     # Feature Scaling
-                #     if(scaling == True):
-                #         scales = torch.max(eta) - torch.min(eta)
-                #         eta = eta/scales
-                #     Eta[m, n, o, :] = eta
-    return Zeta, Eta, Delta, Dissip
+    return Zeta, Eta, Delta
 
 
-def lagrangianforward(coef,coef_d, Zeta, Eta, Delta,Dissip, xdot, device):
+def lagrangianforward(coef, Zeta, Eta, Delta, xdot, device):
     """
     Computing time series of q_tt (q double dot) prediction
     #Params:
@@ -165,50 +102,22 @@ def lagrangianforward(coef,coef_d, Zeta, Eta, Delta,Dissip, xdot, device):
     Delta       : time-series of derivative of basis functions w.r.t q 
     xdot        : Time-series of states_dot data  
     """
-
-
-    DL_q = torch.einsum('jkl,k->jl', Delta, coef)
-    DL_qdot2 = torch.einsum('ijkl,k->ijl', Zeta, coef)
-    DL_qdotq = torch.einsum('ijkl,k->ijl', Eta, coef)
-    D_qdot = torch.einsum('jkl,k->jl', Dissip, coef_d)
-    
+    weight = coef
+    DL_q = torch.einsum('jkl,k->jl', Delta, weight)
+    DL_qdot2 = torch.einsum('ijkl,k->ijl', Zeta, weight)
+    DL_qdotq = torch.einsum('ijkl,k->ijl', Eta, weight)
 
     if(torch.is_tensor(xdot) == False):
         xdot = torch.from_numpy(xdot).to(device).float()
-    #xdot.requires_grad=True
-    n = xdot.shape[1]
-    q_t = xdot[:, :n//2].T
-    q_tt = xdot[:, n//2:].T
+    q_t = xdot[:, :2].T
+
     C = torch.einsum('ijl,il->jl', DL_qdotq, q_t)
     B = DL_q
-    D = D_qdot
-    A = torch.einsum('ijl,il->jl', DL_qdot2, q_tt)
-    #A = torch.einsum('ijl->lij', DL_qdot2)
-    #invA = torch.linalg.pinv(A)
-    #invA = torch.einsum('lij->ijl', invA)
-    loss = D-B+C+A
-    #loss = q_tt - torch.einsum('ijl,jl->il', invA, B-C)
-    # DL_q = torch.einsum('jkl,k->jl', Delta, coef)
-    # DL_qdot2 = torch.einsum('ijkl,k->ijl', Zeta, coef)
-    # DL_qdotq = torch.einsum('ijkl,k->ijl', Eta, coef)
-
-    # if(torch.is_tensor(xdot) == False):
-    #     xdot = torch.from_numpy(xdot).to(device).float()
-    # q_t = xdot[:, :2].T
-    # '2 might be a specific number'
-
-    # C = torch.einsum('ijl,il->jl', DL_qdotq, q_t)
-    # B = DL_q
-    # A = torch.einsum('ijl->lij', DL_qdot2)
-    # invA = torch.linalg.pinv(A)
-    # invA = torch.einsum('lij->ijl', invA)
-    # q_tt = torch.einsum('ijl,jl->il', invA, B-C)
-    #loss is in shape (2,time-series). the first row is the loss of x0 and the second row is the loss of x1
-    return loss
-
-
-
-
+    A = torch.einsum('ijl->lij', DL_qdot2)
+    invA = torch.linalg.pinv(A)
+    invA = torch.einsum('lij->ijl', invA)
+    q_tt = torch.einsum('ijl,jl->il', invA, B-C)
+    return q_tt
 
 
 def ELforward(coef, Zeta, Eta, Delta, xdot, device):
@@ -350,7 +259,6 @@ def TimeDerivativeSymGradient(gradfunc_description, states, states_dot):
     x_dot = sympy.Matrix(states_dot)
 
     temp = gradfunc_description[:, 0].jacobian(x)*x_dot
-    'row i = time derivative of basis function w.r.t q(i)'
     for i in range(1, len(states)//2):
         temp = temp.row_join(gradfunc_description[:, i].jacobian(x)*x_dot)
     dgradfunc_description_dt = temp
@@ -402,10 +310,7 @@ def timeDerivativeLibraryMatrix(x, xdot, function_description, states, states_do
     # evaluate each function in function expression with data
     for func in df_dt:
         column.append(eval(func))
-        'eval(func) returns a tensor with value of the function in time-series'
-        'column: a list with d tensor inside, each tensor has t elements. t is the length of time'
     column = torch.stack(column)
-    'column: a tensor with d*t elements'
     column = column.T
     return column
 
@@ -451,7 +356,7 @@ def timeDerivativeLibraryTensor(x, xdot, matrix_func, states, states_dot):
     #Params:
     x                       : values of state variables in torch tensor. In [x,x_dot] format. Each row presents states at one time
     xdot                    : values of states_dot variables in torch tensor. In [x_dot,x_doubledot] format. Each row presents states at one time
-    matrix_func             : matrix of basis functions (str) (d,n) this n is half of the length of states!!!
+    matrix_func             : matrix of basis functions (str) (d,n)
     states                  : list states variable description (str) (n,)
     states_dot              : time derivative state_variable (str) (n,)
 

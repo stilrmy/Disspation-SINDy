@@ -43,8 +43,8 @@ print(f"Seed value: {seed_value}")
 save = False
 #set the environment for deciding the path to save the files
 environment = "server"
-sample_size = 30
-device = 'cuda:2'
+sample_size = 1
+device = 'cuda:3'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--lr",type=float)
@@ -68,8 +68,8 @@ params['L1'] = float(1.5)
 params['L2'] = float(1.5)
 params['m1'] = float(1)
 params['m2'] = float(1)
-params['b1'] = float(0.05)
-params['b2'] = float(0.05)
+params['b1'] = float(0)
+params['b2'] = float(0)
 if environment == 'laptop':
     root_dir =R'C:\Users\87106\OneDrive\sindy\progress'
 elif environment == 'desktop':
@@ -176,7 +176,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         dissip = Dissip[:,:,i*bs:(i+1)*bs]
         
         x_t = torch.tensor(xdot[i*bs:(i+1)*bs,:]).to(device)
-        d_coef = torch.tensor([0.025,0.025]).to(device).float()
+        d_coef = torch.tensor([0,0]).to(device).float()
         
         
         loss = lagrangianforward(vhat,d_coef,zeta,eta,delta,dissip,x_t,device)
@@ -187,7 +187,7 @@ def Prox_loop(coef,d_coef,prevcoef,Zeta,Eta,Delta,Dissip,xdot,bs,lr,lam,device):
         
         with torch.no_grad():
             v = vhat - lr * vhat.grad
-            v = proxSCAD(v,lam,4)
+            v = proxL1norm(v,lam*lr)
             vhat.grad = None
         loss_list.append(loss)
         
@@ -422,11 +422,11 @@ for trial in range(total_trials):
     d_mask = torch.ones(len(d_expr),device=device)
     xi_d = torch.ones(len(d_expr),device=device)*0
     prevxi_d = xi_d.clone().detach()
-    threshold = 0.01
+    threshold = 0.1
     threshold_d = 0.001
     num_candidates_removed = 0
     stage = 1
-    lr=1e-8
+    lr=5e-6
     lam = 0.1
     
     # lr = args.lr
@@ -454,7 +454,7 @@ for trial in range(total_trials):
         # print("Dissip:",Dissip)
 
         #Training
-        Epoch = 200
+        Epoch = 100
         i = 1
 
         if len(xi_L) <= 25:
@@ -477,7 +477,7 @@ for trial in range(total_trials):
         #     lam = 5e-3
         while(i<=Epoch):   
             # xi_L , xi_d, prevxi_L, prevxi_d, lossitem, q= SR_loop(xi_L,xi_d,prevxi_L,prevxi_d,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,d_training)
-            xi_L,prevxi_L,lossitem,q = Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,device)
+            xi_L,prevxi_L,lossitem,q = Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,125,lr,lam,device)
             # xi_L,lossitem,q = ADMM_Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,1,lr,rho,mu,device,10,gam,epsilon)
             # with torch.autograd.profiler.profile(use_cuda=True) as prof:
             #     Prox_loop(xi_L,xi_d,prevxi_L,Zeta,Eta,Delta,Dissip,Xdot,500,lr,lam,device)  # Your function call here
@@ -515,6 +515,8 @@ for trial in range(total_trials):
         xi_dcpu = np.around(xi_d.detach().cpu().numpy(),decimals=4)
         L = HL.generateExpression(xi_Lcpu,expr)
         D = HL.generateExpression(xi_dcpu,d_expr)
+        print("current lr: ", lr)
+        print("loss:",lossitem)
         print("expression length:\t",len(xi_L))
         print("Result stage " + str(stage+2))
         print("removed candidates:", num_candidates_removed)
