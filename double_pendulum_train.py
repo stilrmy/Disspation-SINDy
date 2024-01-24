@@ -122,10 +122,10 @@ for p in polynom:
     for t in trig:
         product.append(p + '*' + t)
 expr = polynom + trig + product
-
+d_expr = ['x0_t','x1_t']
 
 #Creating library tensor
-Zeta, Eta, Delta = LagrangianLibraryTensor(X,Xdot,expr,states,states_dot, scaling=True)
+Zeta, Eta, Delta, Dissip = LagrangianLibraryTensor(X,Xdot,expr,d_expr,states,states_dot, scaling=True)
 
 
 ## separating known and unknown terms ##
@@ -168,6 +168,7 @@ nonpenaltyidx = [i4, i5, i6]
 
 expr = expr.tolist()
 
+
 Zeta_ = Zeta[:,:,i1,:].clone().detach()
 Eta_ = Eta[:,:,i1,:].clone().detach()
 Delta_ = Delta[:,i1,:].clone().detach()
@@ -183,6 +184,7 @@ device = 'cuda:0'
 Zeta = Zeta.to(device)
 Eta = Eta.to(device)
 Delta = Delta.to(device)
+Dissip = Dissip.to(device)
 
 Zeta_ = Zeta_.to(device)
 Eta_ = Eta_.to(device)
@@ -191,6 +193,7 @@ Delta_ = Delta_.to(device)
 
 xi_L = torch.ones(len(expr), device=device).data.uniform_(-20,20)
 prevxi_L = xi_L.clone().detach()
+xi_d = torch.ones(len(d_expr), device=device).data.uniform_(-20,20)
 c = torch.ones(len(known_expr), device=device)
 
 
@@ -213,11 +216,11 @@ def proxL1norm(w_hat, alpha, nonpenaltyidx):
     return w
 
 
-def training_loop(c,coef, prevcoef, RHS, LHS, xdot, bs, lr, lam, momentum=True):
+def training_loop(c,coef,xi_d, prevcoef, RHS, LHS, Dissip, xdot, bs, lr, lam, momentum=True):
     loss_list = []
     tl = xdot.shape[0]
     n = xdot.shape[1]
-
+    
     Zeta_, Eta_, Delta_ = LHS
     Zeta, Eta, Delta = RHS
 
@@ -225,17 +228,21 @@ def training_loop(c,coef, prevcoef, RHS, LHS, xdot, bs, lr, lam, momentum=True):
         xdot = torch.from_numpy(xdot).to(device).float()
     
     v = coef.clone().detach().requires_grad_(True)
+    d = xi_d.clone().detach().requires_grad_(True)
     prev = v
-    
+    pre_d = d
     for i in range(tl//bs):
                 
         #computing acceleration with momentum
         if(momentum==True):
             vhat = (v + ((i-1)/(i+2))*(v - prev)).clone().detach().requires_grad_(True)
+            dhat = (d + ((i-1)/(i+2))*(d - pre_d)).clone().detach().requires_grad_(True)
         else:
             vhat = v.requires_grad_(True).clone().detach().requires_grad_(True)
+            dhat = d.requires_grad_(True).clone().detach().requires_grad_(True)
    
         prev = v
+        pre_d = d
 
         #Computing loss
         zeta = Zeta[:,:,:,i*bs:(i+1)*bs]
@@ -245,12 +252,15 @@ def training_loop(c,coef, prevcoef, RHS, LHS, xdot, bs, lr, lam, momentum=True):
         zeta_ = Zeta_[:,:,:,i*bs:(i+1)*bs]
         eta_ = Eta_[:,:,:,i*bs:(i+1)*bs]
         delta_ = Delta_[:,:,i*bs:(i+1)*bs]
+
+        dissip = Dissip[:,:,i*bs:(i+1)*bs]
         
         x_t = xdot[i*bs:(i+1)*bs,:]
-
+        
         #forward
         pred = -ELforward(vhat,zeta,eta,delta,x_t,device)
         targ = ELforward(c,zeta_,eta_,delta_,x_t,device)
+        # disp = DPforward(dhat,dissip,device)
         
         lossval = loss(pred, targ)
         
@@ -263,19 +273,21 @@ def training_loop(c,coef, prevcoef, RHS, LHS, xdot, bs, lr, lam, momentum=True):
             
             # Manually zero the gradients after updating weights
             vhat.grad = None
-        
+            
+            # d = dhat - lr*dhat.grad
+            # dhat.grad = None
         
     
         
         loss_list.append(lossval.item())
     print("Average loss : " , torch.tensor(loss_list).mean().item())
-    return v, prevcoef, torch.tensor(loss_list).mean().item()
+    return v, prevcoef,d, torch.tensor(loss_list).mean().item()
 
 
 Epoch = 100
 i = 0
 lr = 5e-6
-lam = 1
+lam = 0.1
 temp = 1000
 RHS = [Zeta, Eta, Delta]
 LHS = [Zeta_, Eta_, Delta_]
@@ -284,17 +296,18 @@ while(i<=Epoch):
     print("Stage 1")
     print("Epoch "+str(i) + "/" + str(Epoch))
     print("Learning rate : ", lr)
-    xi_L, prevxi_L, lossitem= training_loop(c, xi_L,prevxi_L,RHS,LHS,Xdot,128,lr=lr,lam=lam)
+    xi_L, prevxi_L, xi_d, lossitem= training_loop(c, xi_L,xi_d,prevxi_L,RHS,LHS,Dissip,Xdot,128,lr=lr,lam=lam)
     temp = lossitem
     i+=1
 
 
 ## Thresholding
-threshold = 1e-2
+threshold = 1e-1
 surv_index = ((torch.abs(xi_L) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
 expr = np.array(expr)[surv_index].tolist()
 
 xi_L =xi_L[surv_index].clone().detach().requires_grad_(True)
+xi_d = xi_d.clone().detach().requires_grad_(True)
 prevxi_L = xi_L.clone().detach()
 
 ## obtaining analytical model
@@ -304,14 +317,17 @@ print("Result stage 1: ", simplify(L))
 
 
 ## Next round selection ##
-for stage in range(4):
-
+for stage in range(8):
+    # xi_L = torch.ones(len(expr), device=device).data.uniform_(-20,20)
     #Redefine computation after thresholding
     expr.append(known_expr[0])
-    Zeta, Eta, Delta = LagrangianLibraryTensor(X,Xdot,expr,states,states_dot, scaling=False)
+    
+    Zeta, Eta, Delta, Dissip = LagrangianLibraryTensor(X,Xdot,expr,d_expr,states,states_dot, scaling=True)
 
     expr = np.array(expr)
     i1 = np.where(expr == 'x0_t**2')[0]
+    print(expr)
+    print("check if x1_t**2 exists", np.where(expr == 'x1_t**2')[0])
     i4 = np.where(expr == 'x1_t**2')[0][0]
     i5 = np.where(expr == 'cos(x0)')[0][0]
     i6 = np.where(expr == 'cos(x1)')[0][0]
@@ -335,10 +351,11 @@ for stage in range(4):
     Zeta_ = Zeta_.to(device)
     Eta_ = Eta_.to(device)
     Delta_ = Delta_.to(device)
+    Dissip = Dissip.to(device)
 
-    Epoch = 100
+    Epoch = 140
     i = 0
-    lr += 2e-6
+    lr += 5e-7
     if(stage==3):
         lam = 0
     else:
@@ -351,7 +368,7 @@ for stage in range(4):
         print("Stage " + str(stage+2))
         print("Epoch "+str(i) + "/" + str(Epoch))
         print("Learning rate : ", lr)
-        xi_L, prevxi_L, lossitem= training_loop(c, xi_L,prevxi_L,RHS,LHS,Xdot,128,lr=lr,lam=lam)
+        xi_L, prevxi_L, xi_d, lossitem= training_loop(c, xi_L,xi_d,prevxi_L,RHS,LHS,Dissip,Xdot,128,lr=lr,lam=lam)
         i+=1
         if(temp <= 1e-3):
             break
@@ -362,18 +379,23 @@ for stage in range(4):
     expr = np.array(expr)[surv_index].tolist()
 
     xi_L =xi_L[surv_index].clone().detach().requires_grad_(True)
+    xi_d = xi_d.clone().detach().requires_grad_(True)
     prevxi_L = xi_L.clone().detach()
 
     ## obtaining analytical model
     xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
     L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
+    D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
     print("Result stage " + str(stage+2) + ":" , simplify(L))
+    print("Dissipation : ", simplify(D))
 
 
 ## Adding known terms
 L = str(simplify(L)) + " + " + known_expr[0]
+D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
 print("\m")
 print("Obtained Lagrangian : ", L)
+print("Obtained Dissipation : ", simplify(D))
 
 expr = expr + known_expr
 xi_L = torch.cat((xi_L, c))

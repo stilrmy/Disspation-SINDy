@@ -11,7 +11,7 @@ import sys
 sys.path.append(r'../../HLsearch/')
 
 
-def LagrangianLibraryTensor(x, xdot, expr, states, states_dot, scaling=False, scales=None):
+def LagrangianLibraryTensor(x, xdot, expr, d_expr, states, states_dot, scaling=False, scales=None):
     """
     A function dedicated to build time-series tensor for the lagrangian equation.
     The lagrangian equation is described as follow
@@ -38,20 +38,37 @@ def LagrangianLibraryTensor(x, xdot, expr, states, states_dot, scaling=False, sc
     qdot = sympy.Array(
         np.array(sympy.Matrix(states[n//2:])).squeeze().tolist())
     phi = sympy.Array(np.array(sympy.Matrix(expr)).squeeze().tolist())
+    d = sympy.Array(np.array(sympy.Matrix(d_expr)).squeeze().tolist())
     phi_q = derive_by_array(phi, q)
     phi_qdot = derive_by_array(phi, qdot)
     phi_qdot2 = derive_by_array(phi_qdot, qdot)
     phi_qdotq = derive_by_array(phi_qdot, q)
+    d_qdot = derive_by_array(d, qdot)
 
     i, j, k = np.array(phi_qdot2).shape
     l = x.shape[0]
     Delta = torch.ones(j, k, l)
     Zeta = torch.ones(i, j, k, l)
     Eta = torch.ones(i, j, k, l)
+    p,q = np.array(d_qdot).shape
+    Dissip = torch.ones(p, q, l)
+
 
     for idx in range(len(states)):
         locals()[states[idx]] = x[:, idx]
         locals()[states_dot[idx]] = xdot[:, idx]
+
+    for n in range(p):
+        for m in range(q):
+            dissip = eval(str(d_qdot[n,m]))
+            #turn the dissip into tensor if it is int
+            if(isinstance(dissip, int)):
+                Dissip[n,m,:] = dissip*Dissip[n,m,:]               
+            else:
+                if (scaling == True):
+                    scales = torch.max(dissip) - torch.min(dissip)
+                    dissip = dissip/scales
+                Dissip[n,m,:] = dissip
 
     for n in range(j):
         for o in range(k):
@@ -88,7 +105,7 @@ def LagrangianLibraryTensor(x, xdot, expr, states, states_dot, scaling=False, sc
                         scales = torch.max(eta) - torch.min(eta)
                         eta = eta/scales
                     Eta[m, n, o, :] = eta
-    return Zeta, Eta, Delta
+    return Zeta, Eta, Delta, Dissip
 
 
 def lagrangianforward(coef, Zeta, Eta, Delta, xdot, device):
@@ -118,6 +135,10 @@ def lagrangianforward(coef, Zeta, Eta, Delta, xdot, device):
     invA = torch.einsum('lij->ijl', invA)
     q_tt = torch.einsum('ijl,jl->il', invA, B-C)
     return q_tt
+
+def DPforward(coef,Dissip,device):
+    D_qdot = torch.einsum('jkl,k->jl', Dissip, coef)
+    return D_qdot
 
 
 def ELforward(coef, Zeta, Eta, Delta, xdot, device):
