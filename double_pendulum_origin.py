@@ -22,47 +22,28 @@ def generate_data(func, time, init_values):
 def pendulum(t,x):
     return x[1],-9.81*np.sin(x[0])
 
-
-
-
-param = {}
-param['L1'] = 1
-param['L2'] = 1
-param['m1'] = 1
-param['m2'] = 1
-param['b1'] = 0
-param['b2'] = 0
+# Pendulum rod lengths (m), bob masses (kg).
+L1, L2 = 1, 1
+m1, m2 = 1, 1
 # The gravitational acceleration (m.s-2).
 g = 9.81
 tau = 0
 
-
-
-def doublePendulum2_wrapper(params):
-    def doublePendulum2(t, y):
-        L1, L2, m1, m2, b1, b2 = params['L1'], params['L2'], params['m1'], params['m2'], params['b1'], params['b2']
-
-        q1,q2,q1_t,q2_t = y
-
-        q1_2t = -b1*L2*q1_t/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) + b2*L1*q2_t*np.cos(q1 - q2)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) - g*L1*L2*m1*np.sin(q1)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) - g*L1*L2*m2*np.sin(q1)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) + g*L1*L2*m2*np.sin(q2)*np.cos(q1 - q2)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) - L1**2*L2*m2*q1_t**2*np.sin(q1 - q2)*np.cos(q1 - q2)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2) - L1*L2**2*m2*q2_t**2*np.sin(q1 - q2)/(L1**2*L2*m1 - L1**2*L2*m2*np.cos(q1 - q2)**2 + L1**2*L2*m2)
-
-        q2_2t =  b1*L2*m2*q1_t*np.cos(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) - b2*L1*m1*q2_t/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) - b2*L1*m2*q2_t/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + g*L1*L2*m1*m2*np.sin(q1)*np.cos(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) - g*L1*L2*m1*m2*np.sin(q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + g*L1*L2*m2**2*np.sin(q1)*np.cos(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) - g*L1*L2*m2**2*np.sin(q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + L1**2*L2*m1*m2*q1_t**2*np.sin(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + L1**2*L2*m2**2*q1_t**2*np.sin(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2) + L1*L2**2*m2**2*q2_t**2*np.sin(q1 - q2)*np.cos(q1 - q2)/(L1*L2**2*m1*m2 - L1*L2**2*m2**2*np.cos(q1 - q2)**2 + L1*L2**2*m2**2)
-
-        return q1_t, q2_t, q1_2t, q2_2t
-    return doublePendulum2
-
-doublePendulum = doublePendulum2_wrapper(param)
-
+def doublePendulum(t,y,M=0.0):
+    q1,q2,q1_t,q2_t = y
+    q1_2t = (-L1*g*m1*np.sin(q1) - L1*g*m2*np.sin(q1) + M + m2*(2*L1*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q1)*q1_t - 2*L1*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q1)*q1_t)/2 - m2*(2*L1*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q1)*q1_t + 2*L1*(-L1*np.sin(q1)*q1_t**2 - L2*np.sin(q2)*q2_t**2)*np.cos(q1) - 2*L1*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q1)*q1_t + 2*L1*(L1*np.cos(q1)*q1_t**2 + L2*np.cos(q2)*q2_t**2)*np.sin(q1))/2 - m2*(2*L1*L2*np.sin(q1)*np.sin(q2) + 2*L1*L2*np.cos(q1)*np.cos(q2))*(-L2*g*m2*np.sin(q2) + m2*(2*L2*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q2)*q2_t - 2*L2*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q2)*q2_t)/2 - m2*(2*L2*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q2)*q2_t + 2*L2*(-L1*np.sin(q1)*q1_t**2 - L2*np.sin(q2)*q2_t**2)*np.cos(q2) - 2*L2*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q2)*q2_t + 2*L2*(L1*np.cos(q1)*q1_t**2 + L2*np.cos(q2)*q2_t**2)*np.sin(q2))/2 - m2*(2*L1*L2*np.sin(q1)*np.sin(q2) + 2*L1*L2*np.cos(q1)*np.cos(q2))*(-L1*g*m1*np.sin(q1) - L1*g*m2*np.sin(q1) + M + m2*(2*L1*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q1)*q1_t - 2*L1*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q1)*q1_t)/2 - m2*(2*L1*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q1)*q1_t + 2*L1*(-L1*np.sin(q1)*q1_t**2 - L2*np.sin(q2)*q2_t**2)*np.cos(q1) - 2*L1*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q1)*q1_t + 2*L1*(L1*np.cos(q1)*q1_t**2 + L2*np.cos(q2)*q2_t**2)*np.sin(q1))/2)/(2*(m1*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2 + m2*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2)))/(2*(-m2**2*(2*L1*L2*np.sin(q1)*np.sin(q2) + 2*L1*L2*np.cos(q1)*np.cos(q2))**2/(4*(m1*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2 + m2*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2)) + m2*(2*L2**2*np.sin(q2)**2 + 2*L2**2*np.cos(q2)**2)/2)))/(m1*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2 + m2*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2)
+    q2_2t = (-L2*g*m2*np.sin(q2) + m2*(2*L2*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q2)*q2_t - 2*L2*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q2)*q2_t)/2 - m2*(2*L2*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q2)*q2_t + 2*L2*(-L1*np.sin(q1)*q1_t**2 - L2*np.sin(q2)*q2_t**2)*np.cos(q2) - 2*L2*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q2)*q2_t + 2*L2*(L1*np.cos(q1)*q1_t**2 + L2*np.cos(q2)*q2_t**2)*np.sin(q2))/2 - m2*(2*L1*L2*np.sin(q1)*np.sin(q2) + 2*L1*L2*np.cos(q1)*np.cos(q2))*(-L1*g*m1*np.sin(q1) - L1*g*m2*np.sin(q1) + M + m2*(2*L1*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q1)*q1_t - 2*L1*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q1)*q1_t)/2 - m2*(2*L1*(L1*np.sin(q1)*q1_t + L2*np.sin(q2)*q2_t)*np.cos(q1)*q1_t + 2*L1*(-L1*np.sin(q1)*q1_t**2 - L2*np.sin(q2)*q2_t**2)*np.cos(q1) - 2*L1*(L1*np.cos(q1)*q1_t + L2*np.cos(q2)*q2_t)*np.sin(q1)*q1_t + 2*L1*(L1*np.cos(q1)*q1_t**2 + L2*np.cos(q2)*q2_t**2)*np.sin(q1))/2)/(2*(m1*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2 + m2*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2)))/(-m2**2*(2*L1*L2*np.sin(q1)*np.sin(q2) + 2*L1*L2*np.cos(q1)*np.cos(q2))**2/(4*(m1*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2 + m2*(2*L1**2*np.sin(q1)**2 + 2*L1**2*np.cos(q1)**2)/2)) + m2*(2*L2**2*np.sin(q2)**2 + 2*L2**2*np.cos(q2)**2)/2)
+    return q1_t,q2_t,q1_2t,q2_2t
 
 
 #Saving Directory
 rootdir = "../Double Pendulum/Data/"
 
-num_sample = 10
+num_sample = 100
 create_data = True
 training = True
 save = False
-noiselevel = 0
+noiselevel = 2e-2
 
 
 if(create_data):
@@ -129,11 +110,10 @@ for p in polynom:
     for t in trig:
         product.append(p + '*' + t)
 expr = polynom + trig + product
-d_expr = ['x0_t**2','x1_t**2']
 
 
 #Creating library tensor
-Zeta, Eta, Delta, Dissip = LagrangianLibraryTensor(X,Xdot,expr,d_expr,states,states_dot, scaling=True)
+Zeta, Eta, Delta = LagrangianLibraryTensor(X,Xdot,expr,states,states_dot, scaling=True)
 
 
 ## separating known and unknown terms ##
@@ -175,6 +155,7 @@ i6 = np.where(expr == 'cos(x1)')[0][0]
 nonpenaltyidx = [i4, i5, i6]
 
 expr = expr.tolist()
+
 Zeta_ = Zeta[:,:,i1,:].clone().detach()
 Eta_ = Eta[:,:,i1,:].clone().detach()
 Delta_ = Delta[:,i1,:].clone().detach()
@@ -190,7 +171,6 @@ device = 'cuda:0'
 Zeta = Zeta.to(device)
 Eta = Eta.to(device)
 Delta = Delta.to(device)
-Dissip = Dissip.to(device)
 
 Zeta_ = Zeta_.to(device)
 Eta_ = Eta_.to(device)
@@ -199,7 +179,6 @@ Delta_ = Delta_.to(device)
 
 xi_L = torch.ones(len(expr), device=device).data.uniform_(-20,20)
 prevxi_L = xi_L.clone().detach()
-xi_d = torch.ones(len(d_expr), device=device).data.uniform_(-20,20)
 c = torch.ones(len(known_expr), device=device)
 
 
@@ -222,7 +201,7 @@ def proxL1norm(w_hat, alpha, nonpenaltyidx):
     return w
 
 
-def training_loop(c,coef, prevcoef,d_coef, RHS, LHS, Dissip, xdot, bs, lr, lam, momentum=True):
+def training_loop(c,coef, prevcoef, RHS, LHS, xdot, bs, lr, lam, momentum=True):
     loss_list = []
     tl = xdot.shape[0]
     n = xdot.shape[1]
@@ -234,20 +213,15 @@ def training_loop(c,coef, prevcoef,d_coef, RHS, LHS, Dissip, xdot, bs, lr, lam, 
         xdot = torch.from_numpy(xdot).to(device).float()
     
     v = coef.clone().detach().requires_grad_(True)
-    d = d_coef.clone().detach().requires_grad_(True)
     prev = v
-    pre_d = d
     
     for i in range(tl//bs):
                 
         #computing acceleration with momentum
         if(momentum==True):
             vhat = (v + ((i-1)/(i+2))*(v - prev)).clone().detach().requires_grad_(True)
-            # dhat = (d + ((i-1)/(i+2))*(d - pre_d)).clone().detach().requires_grad_(True)
-            dhat = d.requires_grad_(True).clone().detach().requires_grad_(True)
         else:
             vhat = v.requires_grad_(True).clone().detach().requires_grad_(True)
-            dhat = d.requires_grad_(True).clone().detach().requires_grad_(True)
    
         prev = v
 
@@ -259,17 +233,13 @@ def training_loop(c,coef, prevcoef,d_coef, RHS, LHS, Dissip, xdot, bs, lr, lam, 
         zeta_ = Zeta_[:,:,:,i*bs:(i+1)*bs]
         eta_ = Eta_[:,:,:,i*bs:(i+1)*bs]
         delta_ = Delta_[:,:,i*bs:(i+1)*bs]
-
-        dissip = Dissip[:,:,i*bs:(i+1)*bs]
         
         x_t = xdot[i*bs:(i+1)*bs,:]
 
-
-
         #forward
-        disp = DPforward(dhat,dissip,device)
         pred = -ELforward(vhat,zeta,eta,delta,x_t,device)
-        targ = ELforward(c,zeta_,eta_,delta_,x_t,device) + disp
+        targ = ELforward(c,zeta_,eta_,delta_,x_t,device)
+        
         lossval = loss(pred, targ)
         
         #Backpropagation
@@ -278,17 +248,16 @@ def training_loop(c,coef, prevcoef,d_coef, RHS, LHS, Dissip, xdot, bs, lr, lam, 
         with torch.no_grad():
             v = vhat - lr*vhat.grad
             v = (proxL1norm(v,lr*lam,nonpenaltyidx))
-            d = dhat - lr*dhat.grad
+            
             # Manually zero the gradients after updating weights
             vhat.grad = None
-            dhat.grad = None
         
         
     
         
         loss_list.append(lossval.item())
     print("Average loss : " , torch.tensor(loss_list).mean().item())
-    return v, prevcoef,d, torch.tensor(loss_list).mean().item()
+    return v, prevcoef, torch.tensor(loss_list).mean().item()
 
 
 Epoch = 100
@@ -303,7 +272,7 @@ while(i<=Epoch):
     print("Stage 1")
     print("Epoch "+str(i) + "/" + str(Epoch))
     print("Learning rate : ", lr)
-    xi_L, prevxi_L, xi_d, lossitem= training_loop(c, xi_L,prevxi_L,xi_d,RHS,LHS,Dissip,Xdot,128,lr=lr,lam=lam)
+    xi_L, prevxi_L, lossitem= training_loop(c, xi_L,prevxi_L,RHS,LHS,Xdot,128,lr=lr,lam=lam)
     temp = lossitem
     i+=1
 
@@ -314,7 +283,6 @@ surv_index = ((torch.abs(xi_L) >= threshold)).nonzero(as_tuple=True)[0].detach()
 expr = np.array(expr)[surv_index].tolist()
 
 xi_L =xi_L[surv_index].clone().detach().requires_grad_(True)
-xi_d = xi_d.clone().detach().requires_grad_(True)
 prevxi_L = xi_L.clone().detach()
 
 ## obtaining analytical model
@@ -328,9 +296,7 @@ for stage in range(4):
 
     #Redefine computation after thresholding
     expr.append(known_expr[0])
-    
-    Zeta, Eta, Delta, Dissip = LagrangianLibraryTensor(X,Xdot,expr,d_expr,states,states_dot, scaling=False)
-
+    Zeta, Eta, Delta = LagrangianLibraryTensor(X,Xdot,expr,states,states_dot, scaling=False)
 
     expr = np.array(expr)
     i1 = np.where(expr == 'x0_t**2')[0]
@@ -357,7 +323,6 @@ for stage in range(4):
     Zeta_ = Zeta_.to(device)
     Eta_ = Eta_.to(device)
     Delta_ = Delta_.to(device)
-    Dissip = Dissip.to(device)
 
     Epoch = 100
     i = 0
@@ -374,7 +339,7 @@ for stage in range(4):
         print("Stage " + str(stage+2))
         print("Epoch "+str(i) + "/" + str(Epoch))
         print("Learning rate : ", lr)
-        xi_L, prevxi_L, xi_d, lossitem= training_loop(c, xi_L,prevxi_L,xi_d,RHS,LHS,Dissip,Xdot,128,lr=lr,lam=lam)
+        xi_L, prevxi_L, lossitem= training_loop(c, xi_L,prevxi_L,RHS,LHS,Xdot,128,lr=lr,lam=lam)
         i+=1
         if(temp <= 1e-3):
             break
@@ -385,23 +350,18 @@ for stage in range(4):
     expr = np.array(expr)[surv_index].tolist()
 
     xi_L =xi_L[surv_index].clone().detach().requires_grad_(True)
-    xi_d = xi_d.clone().detach().requires_grad_(True)
     prevxi_L = xi_L.clone().detach()
 
     ## obtaining analytical model
     xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
     L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
-    D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
     print("Result stage " + str(stage+2) + ":" , simplify(L))
-    print("Dissipation : ", simplify(D))
 
 
 ## Adding known terms
 L = str(simplify(L)) + " + " + known_expr[0]
-D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
 print("\m")
 print("Obtained Lagrangian : ", L)
-print("Obtained Dissipation : ", simplify(D))
 
 expr = expr + known_expr
 xi_L = torch.cat((xi_L, c))

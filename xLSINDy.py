@@ -44,6 +44,7 @@ def LagrangianLibraryTensor(x, xdot, expr, d_expr, states, states_dot, scaling=F
     phi_qdot2 = derive_by_array(phi_qdot, qdot)
     phi_qdotq = derive_by_array(phi_qdot, q)
     d_qdot = derive_by_array(d, qdot)
+    print(d_qdot)
 
     i, j, k = np.array(phi_qdot2).shape
     l = x.shape[0]
@@ -58,17 +59,17 @@ def LagrangianLibraryTensor(x, xdot, expr, d_expr, states, states_dot, scaling=F
         locals()[states[idx]] = x[:, idx]
         locals()[states_dot[idx]] = xdot[:, idx]
 
-    for n in range(p):
-        for m in range(q):
-            dissip = eval(str(d_qdot[n,m]))
+    for h in range(p):
+        for z in range(q):
+            dissip = eval(str(d_qdot[h,z]))
             #turn the dissip into tensor if it is int
             if(isinstance(dissip, int)):
-                Dissip[n,m,:] = dissip*Dissip[n,m,:]               
+                Dissip[h,z,:] = dissip*Dissip[h,z,:]               
             else:
                 if (scaling == True):
                     scales = torch.max(dissip) - torch.min(dissip)
                     dissip = dissip/scales
-                Dissip[n,m,:] = dissip
+                Dissip[h,z,:] = dissip
 
     for n in range(j):
         for o in range(k):
