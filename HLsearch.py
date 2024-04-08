@@ -161,7 +161,7 @@ def generateExpression(coefficient_vector,function_description,threshold = 1e-8)
             if ret!='' and coef>=0:
                 ret = ret + '+'
             ret = ret + str(coef) + '*' + str(func)
-    if ret != '' : ret = sympify(ret) 
+    # if ret != '' : ret = sympify(ret) 
     return ret
 
 

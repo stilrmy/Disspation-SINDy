@@ -172,6 +172,27 @@ def ELforward(coef, Zeta, Eta, Delta, xdot, device):
     EL = A + C - B
     return EL
 
+def ELDPforward(coef,d_coef, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = False):
+    assert D_CAL == True or D_CAL == False, "D_CAL must be either True or False"
+    weight =  coef
+    if(torch.is_tensor(xdot) == False):
+        xdot = torch.from_numpy(xdot).to(device).float()
+    q_t = xdot[:, :2].T
+    q_tt = xdot[:, 2:].T
+
+    C = torch.einsum('ijkl,il->jkl', Eta, q_t)
+    B = Delta
+    A = torch.einsum('ijkl,il->jkl', Zeta, q_tt)
+    candidate = A + C - B
+    if D_CAL == True:
+        weight = torch.cat((coef,d_coef),0).requires_grad_(True).clone().detach().requires_grad_(True)
+        candidate = torch.cat((candidate,Dissip),1)
+        EL = torch.einsum('jkl,k->jl', candidate, weight)
+        return EL,weight
+    elif D_CAL == False:
+        EL = torch.einsum('jkl,k->jl', candidate, weight)
+        return EL,weight
+
 
 def Upsilonforward(Zeta, Eta, Delta, xdot, device):
     """
@@ -226,6 +247,18 @@ def tauforward(coef, Zeta, Eta, Delta, xdot, device):
     A = torch.einsum('ijl,il->jl', DL_qdot2, q_tt)
     tau = A + C - B
     return tau
+
+def candidate_forward(Zeta, Eta, Delta, xdot, device):
+    if(torch.is_tensor(xdot) == False):
+        xdot = torch.from_numpy(xdot).to(device).float()
+    q_t = xdot[:, :2].T
+    q_tt = xdot[:, 2:].T
+
+    C = torch.einsum('ijkl,il->jkl', Eta, q_t)
+    B = Delta
+    A = torch.einsum('ijkl,il->jkl', Zeta, q_tt)
+    candidate = A + C - B
+    return candidate
 
 
 def SymGradient(func_description, q):
