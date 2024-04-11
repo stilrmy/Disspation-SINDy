@@ -176,7 +176,7 @@ def adaPGM(Tau, coef, RHS, Dissip, xdot, bs, lam):
         return None
 
 
-def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=5e-6,lr_step=1e-6,lam=0.8,batch_size=128):
+def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,Epoch=148,Epoch0=455,lr=1.5e-5,lr_step=2.4e-6,lam=0.35,batch_size=128):
 # device = 'cuda:7'
     if param is None:
         param = {}
@@ -384,7 +384,6 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,E
 
 
             #forward
-            disp = DPforward(dhat,dissip,device)
             pred, weight = ELDPforward(vhat,dhat,zeta,eta,delta,dissip,x_t,device,D_CAL)
             targ = tau 
             lossval = loss(pred, targ)
@@ -439,7 +438,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,E
 
 
     ## Next round selection ##
-    for stage in range(13):
+    for stage in range(5):
 
         #Redefine computation after thresholding
         
@@ -475,7 +474,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,E
         
         if(len(xi_L) <= 8):
             lam = 0
-            threshold = 0
+            threshold = 1e-3
         # elif(len(xi_L) <= 8):
         #     lam = 0
         else:
@@ -497,7 +496,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,E
         
         
         ## Thresholding
-        if stage < 10:
+        if stage < 2:
             
             #regularize the biggest coefficient to 20
             idx = torch.argmax(torch.abs(xi_L))
@@ -521,16 +520,23 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,E
             print("thresholding using the simplified expression")
         ## Thresholding
             ## obtaining analytical model
-
+            #calculate the relative threshold
+            scaler = 20 / torch.abs(xi_L).max().item()
+            xi_L = xi_L * scaler
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
-            L = HL.generateExpression(xi_Lcpu,expr,threshold=0)
+            L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
             L_simplified = simplify(L)
             x0, x1,x0_t,x1_t = symbols('x0 x1 x0_t x1_t')
             coeff_dict = L_simplified.as_coefficients_dict()
+            print(coeff_dict)
             scaler = coeff_dict['x0_t**2']
             relative_threshold = threshold * scaler
-            filter_dict = {key: val for key, val in coeff_dict.items() if abs(val) >= relative_threshold}
+            #check the value of the coefficients, if the value is less than the relative threshold, remove the term
+            filter_dict = {}
+            for key in coeff_dict.keys():
+                if abs(coeff_dict[key]) > relative_threshold:
+                    filter_dict[key] = coeff_dict[key]
             xi_L_value = list(filter_dict.values())
             xi_L = torch.tensor(xi_L_value,device=device,dtype=torch.float32).requires_grad_(True)
             expr_temp = list(filter_dict.keys())
@@ -540,6 +546,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,E
             xi_d = xi_d.clone().detach().requires_grad_(True)
             prevxi_L = xi_L.clone().detach()
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
+
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             print("Result stage " + str(stage+2) + ":" , L)
             print("Dissipation : ", simplify(D))
@@ -564,22 +571,21 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,E
     # Simplify the real Lagrangian model if x0_t*x1_t*cos(x0 - x1) appears in the estimated candidates
     if 'x0_t*x1_t*cos(x0 - x1)' in expr:
         L_real_simplified = simplify(L_real)
-        print(L_real_simplified)
     else:
         L_real_simplified = L_real
 
     # Get the real coefficients
     real_coeff_dict = L_real_simplified.as_coefficients_dict()
-    real_coeff_dict = {str(key): val for key, val in real_coeff_dict.items()}
     # Create a dictionary of estimated coefficients
-    estimated_coeff_dict = dict(zip(expr, xi_Lcpu))
+    estimated_coeff_dict = filter_dict
+
 
     #scale the x0_t**2 and use that scaler to scale the other coefficients
-    scale = real_coeff_dict['x0_t**2']/estimated_coeff_dict['x0_t**2']
+    scale = 1/estimated_coeff_dict[x0_t**2]
 
     for key in estimated_coeff_dict.keys():
         estimated_coeff_dict[key] = estimated_coeff_dict[key]*scale
-
+    print(estimated_coeff_dict)
     # Ensure that the real and estimated coefficients are in the same order
     real_coeff_values = []
     estimated_coeff_values = []
@@ -592,12 +598,12 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,E
     # Initialize the sum of relative errors
     sum_relative_errors = 0
 
-    for real, estimated in zip(real_coeff_values, estimated_coeff_values):
-        # Avoid division by zero
-        if real != 0:
-            sum_relative_errors += (real - estimated) / real
-        else:
-            sum_relative_errors += float('inf') if estimated != 0 else 0
+    # Calculate the relative error for each coefficient
+    for cand in real_coeff_dict.keys():
+        real_coeff = real_coeff_dict[cand]
+        estimated_coeff = estimated_coeff_dict[cand]
+        relative_error = abs(real_coeff - estimated_coeff) / abs(real_coeff)
+        sum_relative_errors += relative_error
 
     # Print the relative errors
     print("The relative errors are:", sum_relative_errors)

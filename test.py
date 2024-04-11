@@ -2,6 +2,11 @@ from sympy import expand, sympify, symbols, parse_expr, simplify,cos,sin
 import numpy as np
 
 expression_string = "9.579*cos(x1)+0.491*x1_t**2+19.246*cos(x0)+0.983*x0_t**2+0.983*x0_t*x1_t*cos(x0 - x1)"
+#turn the string into a sympy expression
+# exprs = parse_expr(expression_string)
+exprs = simplify(expression_string)
+coeff_dict = exprs.as_coefficients_dict()
+print(coeff_dict)
 
 x0_t, x1_t, x0, x1 = symbols('x0_t x1_t x0 x1')
 

@@ -11,14 +11,14 @@ def is_success(real_coeff_values, estimated_coeff_values, tolerance=0.05):
 # Define the objective function for the hyperparameter tuning
 def objective(trial):
     # Define the hyperparameters to tune
-    learning_rate = trial.suggest_loguniform('learning_rate', 1e-6, 1e-3)
+    learning_rate = trial.suggest_float('learning_rate', 1e-6, 1e-3)
     num_epochs = trial.suggest_int('num_epochs', 50, 500)
     num_epoch0 = trial.suggest_int('num_epoch0', 50, 500)
     batch_size = trial.suggest_categorical('batch_size', [32, 64, 128, 256])
     tau = trial.suggest_categorical('tau', [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
     num_samples = trial.suggest_int('num_samples', 10, 200)
-    lambda1 = trial.suggest_loguniform('lambda1', 1e-2, 1)
-    lr_step = trial.suggest_loguniform('lr_step', 5e-7, 1e-5)
+    lambda1 = trial.suggest_float('lambda1', 1e-2, 1)
+    lr_step = trial.suggest_float('lr_step', 5e-7, 1e-5)
     try:
         # Run your algorithm with the given hyperparameters
         param = {}
@@ -45,7 +45,7 @@ def objective(trial):
 
 # Create a study object and optimize the objective function
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=100)
+study.optimize(objective, n_trials=1000)
 
 # Print the best hyperparameters
 print(study.best_params)
