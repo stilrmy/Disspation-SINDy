@@ -12,6 +12,7 @@ import sympy
 import torch
 import HLsearch as HL
 import matplotlib.pyplot as plt
+import math
 
 
 
@@ -63,23 +64,20 @@ def SR_loop(Tau, coef, prevcoef, d_coef, RHS, Dissip, xdot, bs, lr, lam,beta1=0.
     loss_list = []
     tl = xdot.shape[0]
     n = xdot.shape[1]
-    #if(torch.is_tensor(xdot)==False):
-        #xdot = torch.from_numpy(xdot).to(device).float()
-    v = coef.clone().detach().to(device).requires_grad_(True)
-    v_d = d_coef.clone().detach().to(device).requires_grad_(True)
-    prev = prevcoef.clone().detach().to(device).requires_grad_(True)
-    prev_d = predcoef.clone().detach().to(device).requires_grad_(True)
+    t = coef.shape[0]
+    weight = coef.clone().detach().to(device).requires_grad_(True)
+    if D_CAL:
+        weight = torch.cat((weight, d_coef.clone().detach().to(device).requires_grad_(True)),0)
+
     # Initialize moving averages for Adam
-    m_v = torch.zeros_like(v)
-    m_d = torch.zeros_like(v_d)
-    v_v = torch.zeros_like(v)
-    v_d_ = torch.zeros_like(v_d)
+    m = torch.zeros_like(weight)
+    v = torch.zeros_like(weight)
     for i in range(tl//bs):
         #computing acceleration with momentum
-        vhat = v.requires_grad_(True).clone().detach().to(device).requires_grad_(True)
-        vdhat = v_d.requires_grad_(True).clone().detach().to(device).requires_grad_(True)
-        prev = v
-        prev_d = v_d
+        what = weight.requires_grad_(True).clone().detach().to(device).requires_grad_(True)
+
+        
+
         #Computing loss
         zeta = Zeta[:,:,:,i*bs:(i+1)*bs]
         eta = Eta[:,:,:,i*bs:(i+1)*bs]
@@ -87,40 +85,32 @@ def SR_loop(Tau, coef, prevcoef, d_coef, RHS, Dissip, xdot, bs, lr, lam,beta1=0.
         dissip = Dissip[:,:,i*bs:(i+1)*bs]
         tau = Tau[:,i*bs:(i+1)*bs]
         x_t = xdot[i*bs:(i+1)*bs,:]
-        vdhat_ = torch.tensor([0.025,0.025]).to(device).float()
         #forward
-        pred, weight = ELDPforward(vhat,vdhat,zeta,eta,delta,dissip,x_t,device,D_CAL)
+        pred, weight = ELDPforward(weight[:t], weight[t:], zeta, eta, delta,dissip, x_t, device,D_CAL)
         targ = tau 
         lossval = loss(pred, targ)
-        #lossval = torch.mean(lossval[0,:]**2)+torch.mean(lossval[1,:]**2)
-        l1_norm = torch.norm(vhat, 1)
-        l1_d_norm = torch.norm(vdhat, 1)
+        l1_norm = torch.norm(weight[:t], 1)
         lossval = lossval + lam * l1_norm 
         #Backpropagation
         lossval.backward()
-        #torch.nn.utils.clip_grad_norm_(vhat, max_norm=6)
-        #torch.nn.utils.clip_grad_norm_(vdhat, max_norm=6)
         with torch.no_grad():
             # Update moving averages
-            m_v = beta1 * m_v + (1 - beta1) * vhat.grad
-            v_v = beta2 * v_v + (1 - beta2) * (vhat.grad ** 2)
-            # m_d = beta1 * m_d + (1 - beta1) * vdhat.grad
-            #v_d_ = beta2 * v_d_ + (1 - beta2) * (vdhat.grad ** 2)
+            m = beta1 * m + (1 - beta1) * weight.grad
+            v = beta2 * v + (1 - beta2) * weight.grad ** 2
             # Compute bias-corrected moving averages
-            m_v_hat = m_v / (1 - beta1 ** (i + 1))
-            v_v_hat = v_v / (1 - beta2 ** (i + 1))
-            m_d_hat = m_d / (1 - beta1 ** (i + 1))
-            v_d_hat = v_d_ / (1 - beta2 ** (i + 1))
+            m_hat = m / (1 - beta1 ** (i + 1))
+            v_hat = v / (1 - beta2 ** (i + 1))
             # Update parameters
-            v = vhat - lr * m_v_hat / (torch.sqrt(v_v_hat) + eps)
-            #v_d = vdhat - lr * m_d_hat / (torch.sqrt(v_d_hat) + eps)
+            weight = weight - lr * m_hat / (torch.sqrt(v_hat) + eps)
             #reset gradient
-            vhat.grad.zero_()
-            #vdhat.grad.zero_()
+            weight.grad = None
+        vhat = weight[:t]
+        if D_CAL:
+            dhat = weight[t:]
 
         loss_list.append(lossval.item())
     print("Average loss : " , torch.tensor(loss_list).mean().item())
-    return v, prev, vdhat_, torch.tensor(loss_list).mean().item()
+    return vhat, dhat, torch.tensor(loss_list).mean().item()
 
 #PGD optimizer
 
@@ -175,7 +165,9 @@ def adaPGM(Tau, coef, RHS, Dissip, xdot, bs, lam):
         return None
 
 
-def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,Epoch=148,Epoch0=455,lr=1.5e-5,lr_step=2.4e-6,lam=0.35,batch_size=128):
+def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=5e-4,lr_step=2e-5,lam0=0.03,lam=0.01,batch_size=128):
+#optuna tuned setting
+# def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=67,noiselevel=0,Epoch=226,Epoch0=335,lr=5.24e-4,lr_step=9e-3,lam0=0.39,lam=0.18,batch_size=64):
 # device = 'cuda:7'
     if param is None:
         param = {}
@@ -185,7 +177,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
         param['m2'] = 1
         param['b1'] = 0.5
         param['b2'] = 0.5
-        param['tau0'] = 0.5
+        param['tau0'] = 0.1
         param['omega1'] = 0.5
         param['omega2'] = 0.3
         param['phi'] = 0
@@ -342,69 +334,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
     xi_d = torch.ones(len(d_expr), device=device).data
 
 
-    def PGD_loop(Tau, coef, prevcoef,d_coef, RHS, Dissip, xdot, bs, lr, lam, momentum=True, D_CAL=False,device='cuda:0'):
-        loss_list = []
-        tl = xdot.shape[0]
-        n = xdot.shape[1]
-        Zeta, Eta, Delta = RHS
-        if(torch.is_tensor(xdot)==False):
-            xdot = torch.from_numpy(xdot).to(device).float()
-        
-        v = coef.clone().detach().requires_grad_(True)
-        d = d_coef.clone().detach().requires_grad_(True)
-        
-        prev = v
-        pre_d = d
 
-
-        
-        for i in range(tl//bs):
-                    
-            #computing acceleration with momentum
-            if(momentum==True):
-                vhat = (v + ((i-1)/(i+2))*(v - prev)).clone().detach().requires_grad_(True)
-                dhat = (d + ((i-1)/(i+2))*(d - pre_d)).clone().detach().requires_grad_(True)
-                dhat = d.requires_grad_(True).clone().detach().requires_grad_(True)
-            else:
-                vhat = v.requires_grad_(True).clone().detach().requires_grad_(True)
-                dhat = d.requires_grad_(True).clone().detach().requires_grad_(True)
-    
-            prev = v
-
-            #Computing loss
-            zeta = Zeta[:,:,:,i*bs:(i+1)*bs]
-            eta = Eta[:,:,:,i*bs:(i+1)*bs]
-            delta = Delta[:,:,i*bs:(i+1)*bs]
-
-            dissip = Dissip[:,:,i*bs:(i+1)*bs]
-            tau = Tau[:,i*bs:(i+1)*bs]
-            x_t = xdot[i*bs:(i+1)*bs,:]
-
-
-
-            #forward
-            disp = DPforward(dhat,dissip,device)
-            pred, weight = ELDPforward(vhat,dhat,zeta,eta,delta,dissip,x_t,device,D_CAL)
-            targ = tau 
-            lossval = loss(pred, targ)
-            
-            #Backpropagation
-            lossval.backward()
-            with torch.no_grad():
-                weight = weight - lr * weight.grad
-                weight = proxL1norm(weight, lr*lam, nonpenaltyidx)
-                weight.grad = None
-                if D_CAL:
-                    v = weight[:len(expr)]
-                    d = weight[len(expr):]
-                else:
-                    v = weight
-            
-        
-            
-            loss_list.append(lossval.item())
-        print("Average loss : " , torch.tensor(loss_list).mean().item())
-        return v, prevcoef,d, torch.tensor(loss_list).mean().item()
 
 
 
@@ -415,10 +345,12 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
     while(i<=Epoch0):
         print("\n")
         print("Stage 1")
-        print("Epoch "+str(i) + "/" + str(Epoch))
+        print("Epoch "+str(i) + "/" + str(Epoch0))
         print("Learning rate : ", lr)
-        xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam,device=device)
+        xi_L, xi_d, lossitem= SR_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam0,D_CAL=True,device=device)
         temp = lossitem
+        if math.isnan(temp):
+            return xi_L,100
         i+=1
 
 
@@ -480,7 +412,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
         else:
             threshold = 0.01
             lr += lr_step
-            lam = 0.2
+            lam = lam
         temp = 1000
         RHS = [Zeta, Eta, Delta]
         
@@ -489,8 +421,10 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
             print("Stage " + str(stage+2))
             print("Epoch "+str(i) + "/" + str(Epoch))
             print("Learning rate : ", lr)
-            xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam,D_CAL=True,device=device)
+            xi_L, xi_d, lossitem= SR_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam,D_CAL=True,device=device)
             i+=1
+            if math.isnan(temp):
+                return xi_L,100
             if(temp <= 1e-3):
                 break
         
@@ -514,7 +448,8 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
             D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
             # print("Result stage " + str(stage+2) + ":" , simplify(L))
             print("Result stage " + str(stage+2) + ":" , L)
-            print("simplified : ", simplify(L))
+            if len(xi_L) <= 15:
+                print("simplified : ", simplify(L))
             print("Dissipation : ", simplify(D))
         else:
             print("thresholding using the simplified expression")
@@ -599,14 +534,18 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
     sum_relative_errors = 0
 
     # Calculate the relative error for each coefficient
-    for cand in real_coeff_dict.keys():
-        real_coeff = real_coeff_dict[cand]
-        estimated_coeff = estimated_coeff_dict[cand]
-        relative_error = abs(real_coeff - estimated_coeff) / abs(real_coeff)
-        sum_relative_errors += relative_error
+    for cand in estimated_coeff_dict.keys():
+        #check if the term is in the real coefficients
+        if cand in real_coeff_dict.keys():
+            real_coeff = real_coeff_dict[cand]
+            estimated_coeff = estimated_coeff_dict[cand]
+            relative_error = abs(real_coeff - estimated_coeff) / abs(real_coeff)
+            sum_relative_errors += relative_error
+        else:
+            sum_relative_errors += 1
 
     # Print the relative errors
-    print("The relative errors are:", sum_relative_errors)
+    print("The relative errors are:", float(sum_relative_errors))
     
 
 

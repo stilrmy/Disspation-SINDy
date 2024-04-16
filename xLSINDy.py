@@ -192,6 +192,27 @@ def ELDPforward(coef,d_coef, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = Fals
     elif D_CAL == False:
         EL = torch.einsum('jkl,k->jl', candidate, weight)
         return EL,weight
+    
+def adaELDPforward(coef,d_coef, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = False):
+    assert D_CAL == True or D_CAL == False, "D_CAL must be either True or False"
+    weight =  coef
+    if(torch.is_tensor(xdot) == False):
+        xdot = torch.from_numpy(xdot).to(device).float()
+    q_t = xdot[:, :2].T
+    q_tt = xdot[:, 2:].T
+
+    C = torch.einsum('ijkl,il->jkl', Eta, q_t)
+    B = Delta
+    A = torch.einsum('ijkl,il->jkl', Zeta, q_tt)
+    candidate = A + C - B
+    if D_CAL == True:
+        weight = torch.cat((coef,d_coef),0).requires_grad_(True).clone().detach().requires_grad_(True)
+        candidate = torch.cat((candidate,Dissip),1)
+        EL = torch.einsum('jkl,k->jl', candidate, weight)
+        return EL,weight
+    elif D_CAL == False:
+        EL = torch.einsum('jkl,k->jl', candidate, weight)
+        return EL,weight,candidate
 
 
 def Upsilonforward(Zeta, Eta, Delta, xdot, device):

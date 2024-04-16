@@ -1,13 +1,13 @@
 from sympy import expand, sympify, symbols, parse_expr, simplify,cos,sin
 import numpy as np
 
-expression_string = "9.579*cos(x1)+0.491*x1_t**2+19.246*cos(x0)+0.983*x0_t**2+0.983*x0_t*x1_t*cos(x0 - x1)"
+expression_string = "10.0*x0_t**2*sin(x1) + 4.352*x0_t**2*sin(x0 - x1) + 4.352*x0_t**2*sin(x0 + x1) + 2.802*x0_t*x1_t*sin(2*x0) + 3.993*x0_t*x1_t*sin(x1) - 2.896*x0_t*x1_t*sin(x0 - x1) + 2.896*x0_t*x1_t*sin(x0 + x1) + 2.133*x0_t*sin(x0) - 3.116*x0_t*sin(x0 - x1) + 3.116*x0_t*sin(x0 + x1) + 3.551*x0_t*cos(x0 - x1) - 0.044*x0_t*cos(x0 + x1) - 0.186*x1_t**2*sin(x0 - x1) + 0.186*x1_t**2*sin(x0 + x1) - 0.425*x1_t**2*cos(2*x0) + 5.174*x1_t**2 + 1.115*x1_t*sin(2*x0) + 4.212*x1_t*cos(x0 - x1) - 4.212*x1_t*cos(x0 + x1) - 3.648*cos(2*x1) + 1.055*cos(x0 - x1) + 1.055*cos(x0 + x1) + 3.648"
 #turn the string into a sympy expression
 # exprs = parse_expr(expression_string)
 exprs = simplify(expression_string)
 coeff_dict = exprs.as_coefficients_dict()
 print(coeff_dict)
-
+print(exprs)
 x0_t, x1_t, x0, x1 = symbols('x0_t x1_t x0 x1')
 
 param = {}
@@ -30,7 +30,6 @@ L_real = m1*l1**2*x0_t**2/2 + m2*(l1**2*x0_t**2/2 + l2**2*x1_t**2/2 + l1*l2*x0_t
 # Simplify the real Lagrangian model if x0_t*x1_t*cos(x0 - x1) appears in the estimated candidates
 if 'x0_t*x1_t*cos(x0 - x1)' in expr:
     L_real_simplified = simplify(L_real)
-    print(L_real_simplified)
 else:
     L_real_simplified = L_real
 

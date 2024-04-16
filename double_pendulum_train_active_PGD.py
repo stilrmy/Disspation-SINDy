@@ -12,7 +12,7 @@ import sympy
 import torch
 import HLsearch as HL
 import matplotlib.pyplot as plt
-
+import math
 
 
 import time
@@ -176,7 +176,9 @@ def adaPGM(Tau, coef, RHS, Dissip, xdot, bs, lam):
         return None
 
 
-def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,Epoch=148,Epoch0=455,lr=1.5e-5,lr_step=2.4e-6,lam=0.35,batch_size=128):
+def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=150,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=0.01):
+#optuna best setting
+# def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=73,noiselevel=0,Epoch=231,Epoch0=348,lr=1.1e-6,lr_step=6e-6,lam0=0.8,lam=0.248,batch_size=256):
 # device = 'cuda:7'
     if param is None:
         param = {}
@@ -186,7 +188,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
         param['m2'] = 1
         param['b1'] = 0.5
         param['b2'] = 0.5
-        param['tau0'] = 0.5
+        param['tau0'] = 0.1
         param['omega1'] = 0.5
         param['omega2'] = 0.3
         param['phi'] = 0
@@ -271,7 +273,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
         for t in trig:
             product.append(p + '*' + t)
     expr = polynom + trig + product
-    d_expr = ['x0_t**2','x1_t**2']
+    d_expr = ['x0_t**2','x1_t**2','x0_t']
     # expr = ['cos(x0)','cos(x1)','x0_t*x1_t*cos(x0)*cos(x1)','x0_t*x1_t*sin(x0)*sin(x1)','x0_t**2','x1_t**2']
 
 
@@ -384,6 +386,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
 
 
             #forward
+            disp = DPforward(dhat,dissip,device)
             pred, weight = ELDPforward(vhat,dhat,zeta,eta,delta,dissip,x_t,device,D_CAL)
             targ = tau 
             lossval = loss(pred, targ)
@@ -415,11 +418,13 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
     while(i<=Epoch0):
         print("\n")
         print("Stage 1")
-        print("Epoch "+str(i) + "/" + str(Epoch))
+        print("Epoch "+str(i) + "/" + str(Epoch0))
         print("Learning rate : ", lr)
-        xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam,device=device)
+        xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam0,device=device)
         temp = lossitem
         i+=1
+        if math.isnan(temp):
+            return xi_L,100
 
 
     ## Thresholding
@@ -438,7 +443,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
 
 
     ## Next round selection ##
-    for stage in range(5):
+    for stage in range(6):
 
         #Redefine computation after thresholding
         
@@ -472,7 +477,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
       
         i = 0
         
-        if(len(xi_L) <= 8):
+        if(len(xi_L) <= 6):
             lam = 0
             threshold = 1e-3
         # elif(len(xi_L) <= 8):
@@ -480,7 +485,7 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
         else:
             threshold = 0.01
             lr += lr_step
-            lam = 0.2
+            lam = lam
         temp = 1000
         RHS = [Zeta, Eta, Delta]
         
@@ -491,6 +496,8 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
             print("Learning rate : ", lr)
             xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam,D_CAL=True,device=device)
             i+=1
+            if math.isnan(temp):
+                return xi_L,100
             if(temp <= 1e-3):
                 break
         
@@ -546,7 +553,13 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
             xi_d = xi_d.clone().detach().requires_grad_(True)
             prevxi_L = xi_L.clone().detach()
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
+            #perform thresholding on the dissipation term without simplification
+            surv_index = ((torch.abs(xi_d) >= threshold_d)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
+            d_expr = np.array(d_expr)[surv_index].tolist()
+            xi_d =xi_d[surv_index].clone().detach().requires_grad_(True)
+            D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
 
+        
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             print("Result stage " + str(stage+2) + ":" , L)
             print("Dissipation : ", simplify(D))
@@ -599,11 +612,15 @@ def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=119,noiselevel=0,E
     sum_relative_errors = 0
 
     # Calculate the relative error for each coefficient
-    for cand in real_coeff_dict.keys():
-        real_coeff = real_coeff_dict[cand]
-        estimated_coeff = estimated_coeff_dict[cand]
-        relative_error = abs(real_coeff - estimated_coeff) / abs(real_coeff)
-        sum_relative_errors += relative_error
+    for cand in estimated_coeff_dict.keys():
+        #check if the term is in the real coefficients
+        if cand in real_coeff_dict.keys():
+            real_coeff = real_coeff_dict[cand]
+            estimated_coeff = estimated_coeff_dict[cand]
+            relative_error = abs(real_coeff - estimated_coeff) / abs(real_coeff)
+            sum_relative_errors += relative_error
+        else:
+            sum_relative_errors += 1
 
     # Print the relative errors
     print("The relative errors are:", sum_relative_errors)

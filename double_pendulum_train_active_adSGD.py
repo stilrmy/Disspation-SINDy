@@ -7,7 +7,7 @@ from scipy.integrate import solve_ivp
 from xLSINDy import *
 from sympy.physics.mechanics import *
 from sympy import *
-from adaPGM import adaptive_primal_dual, NormL1, Zero, OurRule
+from optimizer import Adsgd
 import sympy
 import torch
 import HLsearch as HL
@@ -24,8 +24,8 @@ def generate_data(func, time, init_values):
 def pendulum(t,x):
     return x[1],-9.81*np.sin(x[0])
 
-def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Epoch0=348,lr=1.1e-6,lr_step=6e-6,lam0=0.8,lam=0.248,batch_size=256):
 
+def main(param=None,device='cuda:4',num_sample=73,noiselevel=0,Epoch=231,Epoch0=348,lr=1.1e-6,lr_step=6e-6,lam0=0.8,lam=0.248,batch_size=256):
     device = 'cuda:2'
     param = {}
     param['L1'] = 1
@@ -40,7 +40,7 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
     param['phi'] = 0
     # The gravitational acceleration (m.s-2).
     g = 9.81
-    opt_mode = "adaPGM"
+    
 
 
 
@@ -64,11 +64,11 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
     #Saving Directory
     rootdir = "../Double Pendulum/Data/"
 
-    num_sample = 10
+    
     create_data = True
     training = True
     save = False
-    noiselevel = 0
+
 
 
     if(create_data):
@@ -206,114 +206,28 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
 
 
 
-    xi_L = torch.ones(len(expr), device=device)
+    xi_L = torch.ones(len(expr), device=device).data.uniform_(-20,20)
     prevxi_L = xi_L.clone().detach()
-    xi_d = torch.ones(len(d_expr), device=device).data.uniform_(-20,20)
+    xi_d = torch.ones(len(d_expr), device=device)
 
 
 
-    def loss(pred, targ):
-        loss = torch.mean((pred - targ)**2) 
-        return loss 
+    # Function to clone a parameter including its data and gradient
+    def clone_param_with_grad(param):
+        # Clone parameter data
+        cloned_param = param.clone().detach().requires_grad_(True)
+        # Check if the original parameter has gradients and clone them as well
+        if param.grad is not None:
+            cloned_param.grad = param.grad.clone()
+        return cloned_param
 
 
-    def clip(w, alpha):
-        clipped = torch.minimum(w,alpha)
-        clipped = torch.maximum(clipped,-alpha)
-        return clipped
-
-    def proxL1norm(w_hat, alpha, nonpenaltyidx):
-        if(torch.is_tensor(alpha)==False):
-            alpha = torch.tensor(alpha)
-        w = w_hat - clip(w_hat,alpha)
-        for idx in nonpenaltyidx:
-            w[idx] = w_hat[idx]
-        return w
 
 
-    def prox(x, gamma=1, lambda_=1, nonpenaltyidx=None):
-        # Compute gamma * lambda
-        gl = gamma * lambda_
-        
-        # Apply the proximal operator conditions in a vectorized manner
-        y = torch.where(x <= -gl, x + gl, torch.where(x >= gl, torch.zeros_like(x), -x))
-        
-        # Apply nonpenalty indices: set elements of y at nonpenaltyidx to their original values in x
-        if nonpenaltyidx is not None:
-            y[nonpenaltyidx] = x[nonpenaltyidx]
-        
-        
-        return y
 
-    #ADAM optimizer
-    def SR_loop(Tau, coef, prevcoef, d_coef, RHS, Dissip, xdot, bs, lr, lam,beta1=0.9,beta2=0.999,eps=1e-8):
-        predcoef = coef.clone().detach().to(device).requires_grad_(True)
-        loss_list = []
-        tl = xdot.shape[0]
-        n = xdot.shape[1]
-        #if(torch.is_tensor(xdot)==False):
-            #xdot = torch.from_numpy(xdot).to(device).float()
-        v = coef.clone().detach().to(device).requires_grad_(True)
-        v_d = d_coef.clone().detach().to(device).requires_grad_(True)
-        prev = prevcoef.clone().detach().to(device).requires_grad_(True)
-        prev_d = predcoef.clone().detach().to(device).requires_grad_(True)
-        # Initialize moving averages for Adam
-        m_v = torch.zeros_like(v)
-        m_d = torch.zeros_like(v_d)
-        v_v = torch.zeros_like(v)
-        v_d_ = torch.zeros_like(v_d)
-        for i in range(tl//bs):
-            #computing acceleration with momentum
-            vhat = v.requires_grad_(True).clone().detach().to(device).requires_grad_(True)
-            vdhat = v_d.requires_grad_(True).clone().detach().to(device).requires_grad_(True)
-            prev = v
-            prev_d = v_d
-            #Computing loss
-            zeta = Zeta[:,:,:,i*bs:(i+1)*bs]
-            eta = Eta[:,:,:,i*bs:(i+1)*bs]
-            delta = Delta[:,:,i*bs:(i+1)*bs]
-            dissip = Dissip[:,:,i*bs:(i+1)*bs]
-            tau = Tau[:,i*bs:(i+1)*bs]
-            x_t = xdot[i*bs:(i+1)*bs,:]
-            vdhat_ = torch.tensor([0.025,0.025]).to(device).float()
-            #forward
-            vdhat_ = torch.zeros_like(vdhat)
-            disp = DPforward(vdhat_,dissip,device)
-            pred = -tauforward(vhat,zeta,eta,delta,x_t,device)
-            targ = tau 
-            lossval = loss(pred, targ)
-            #lossval = torch.mean(lossval[0,:]**2)+torch.mean(lossval[1,:]**2)
-            l1_norm = torch.norm(vhat, 1)
-            l1_d_norm = torch.norm(vdhat, 1)
-            lossval = lossval + lam * l1_norm 
-            #Backpropagation
-            lossval.backward()
-            #torch.nn.utils.clip_grad_norm_(vhat, max_norm=6)
-            #torch.nn.utils.clip_grad_norm_(vdhat, max_norm=6)
-            with torch.no_grad():
-                # Update moving averages
-                m_v = beta1 * m_v + (1 - beta1) * vhat.grad
-                v_v = beta2 * v_v + (1 - beta2) * (vhat.grad ** 2)
-                # m_d = beta1 * m_d + (1 - beta1) * vdhat.grad
-                #v_d_ = beta2 * v_d_ + (1 - beta2) * (vdhat.grad ** 2)
-                # Compute bias-corrected moving averages
-                m_v_hat = m_v / (1 - beta1 ** (i + 1))
-                v_v_hat = v_v / (1 - beta2 ** (i + 1))
-                m_d_hat = m_d / (1 - beta1 ** (i + 1))
-                v_d_hat = v_d_ / (1 - beta2 ** (i + 1))
-                # Update parameters
-                v = vhat - lr * m_v_hat / (torch.sqrt(v_v_hat) + eps)
-                #v_d = vdhat - lr * m_d_hat / (torch.sqrt(v_d_hat) + eps)
-                #reset gradient
-                vhat.grad.zero_()
-                #vdhat.grad.zero_()
-
-            loss_list.append(lossval.item())
-        print("Average loss : " , torch.tensor(loss_list).mean().item())
-        return v, prev, vdhat_, torch.tensor(loss_list).mean().item()
 
     #PGD optimizer
-    def PGD_loop(Tau, coef, prevcoef, d_coef, RHS, Dissip, xdot, bs, lr, lam, momentum=True, D_CAL=False, device='cuda:0', it=100):
+    def train_loop(Tau, coef, prevcoef, d_coef, RHS, Dissip, xdot, bs, lr, amplifier=0.02,damping=1,weight_decay=0,eps=1e-8, lam=0.1, D_CAL=False, device='cuda:0', it=100):
         loss_list = []
         tl = xdot.shape[0]
         Zeta, Eta, Delta = RHS
@@ -322,15 +236,27 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
         
         v = coef.clone().detach().requires_grad_(True)
         d = d_coef.clone().detach().requires_grad_(True)
+        clone_v = clone_param_with_grad(v)
+        clone_d = clone_param_with_grad(d)
         # Parameters to optimize
         params_to_optimize = [v]
         if D_CAL:
-            
             params_to_optimize.append(d)
+
+        
         
         # Initialize optimizer with the dynamic set of parameters
-        optimizer = torch.optim.SGD(params_to_optimize, lr=lr, momentum=0.9 if momentum else 0.0)
-    
+        optimizer = Adsgd(params_to_optimize,lr=lr,amplifier=amplifier, damping=damping, weight_decay=weight_decay,eps=eps)
+
+
+        pred, weight = ELDPforward(clone_v, clone_d, Zeta, Eta, Delta, Dissip, xdot, device, D_CAL)
+        targ = Tau
+        lossval = torch.mean((pred - targ)**2) + lam * torch.norm(clone_v, 1)
+        lossval.backward()
+        params_to_optimize_prev = [clone_v]
+        if D_CAL:
+            params_to_optimize_prev.append(clone_d)
+        prev_optimizer = Adsgd(params_to_optimize_prev, lr=lr, amplifier=amplifier, damping=damping, weight_decay=weight_decay, eps=eps)
         for epoch in range(it):
 
             for i in range(tl // bs):
@@ -347,10 +273,18 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
                 # Forward pass (example function calls, implement according to your needs)
                 pred, weight = ELDPforward(v, d, zeta, eta, delta, dissip, x_t, device, D_CAL)
                 targ = tau
-                lossval = loss(pred, targ)
+                lossval = torch.mean((pred - targ)**2) + lam * torch.norm(v, 1)
 
                 # Backward pass and optimizer step
                 lossval.backward()
+                optimizer.compute_dif_norms(prev_optimizer)
+                #change the parameters inside the prev_optimizer to the current v and d
+                clone_v = clone_param_with_grad(v)
+                temp_params = [clone_v]
+                if D_CAL:
+                    clone_d = clone_param_with_grad(d)
+                    temp_params = [clone_v, clone_d]
+                prev_optimizer.param_groups[0]['params'] = temp_params
                 optimizer.step()
 
                 loss_list.append(lossval.item())
@@ -363,142 +297,22 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
 
 
 
-    # def stepsize(lr,pre_lr, x_grad, pre_x_grad, x, pre_x):
-    #     # Calculate the Lipschitz constant 'l_k'
-    #     l_k_numerator = (x_grad - pre_x_grad) * (x - pre_x)
-    #     l_k = l_k_numerator.sum() / torch.norm(x - pre_x, p=2)**2
-
-    #     # Calculate the curvature constant 'c_k'
-    #     c_k_numerator = torch.norm(x_grad - pre_x_grad, p=2)**2
-    #     c_k = c_k_numerator / l_k_numerator.sum()
-
-        
-    #     # Compute gamma_k, assume gamma_0 is given as 'lr' (learning rate)
-    #     gamma_k = lr
-        
-    #     # Calculate gamma_k+1 using the formula
-    #     term1 = torch.sqrt(torch.tensor(1.0) + gamma_k / pre_lr)
-    #     term2 = 1.0 / (2.0 * torch.sqrt(gamma_k * l_k * (gamma_k * c_k - 1.0)) + 1e-8)  # Add epsilon for numerical stability
-    #     minimum = torch.where(torch.isnan(term2), term1, torch.min(term1, term2))
-    #     print('minimum', minimum)
-    #     gamma_k_plus_1 = gamma_k * minimum
-    #     return gamma_k_plus_1
-    def stepsize(pre_lr,pre_pre_lr, x_grad, pre_x_grad, x, pre_x):
-        theta = torch.tensor(1.2,device=device)
-        t = torch.tensor(1.0,device=device)
-        norm_A = torch.tensor(0,device=device)
-        delta = torch.tensor(0,device=device)
-        if(torch.is_tensor(pre_lr)==False):
-            pre_lr = torch.tensor(pre_lr,device=device)
-        if(torch.is_tensor(pre_pre_lr)==False):
-            pre_pre_lr = torch.tensor(pre_pre_lr,device=device)
-        xi = t**2 * pre_lr * norm_A**2
-        C = torch.norm(x_grad - pre_x_grad, p=2)**2/torch.dot(x_grad - pre_x_grad, x - pre_x)
-        if torch.isnan(C):
-            C = 0
-        L = torch.dot(x_grad - pre_x_grad, x - pre_x)/torch.norm(x - pre_x, p=2)**2
-        if torch.isnan(L):
-            L = 0
-        D = pre_lr * L * (pre_lr * C - 1)
-        if torch.isnan(D):
-            D = 0
-        print(torch.dot(x_grad - pre_x_grad, x - pre_x))
-        lr = torch.min(pre_lr * torch.sqrt(1+pre_lr/pre_pre_lr), torch.min(1/(2 * theta * t * norm_A + 1e-8), (pre_lr * torch.sqrt(1 - 4 * xi * (1 + delta)**2)/torch.sqrt(2*(1 + delta)*(D * torch.sqrt(D**2 + xi * (1 - 4 * xi * (1 + delta)**2)))))))
-        return lr
-
-
-    def adaPGM(Tau, coef,d_coef, RHS, Dissip, xdot, it, lam,D_CAL=False,device='cuda:0'):
-            loss_list = []
-            tl = xdot.shape[0]
-            n = xdot.shape[1]
-            Zeta, Eta, Delta = RHS
-            if(torch.is_tensor(xdot)==False):
-                xdot = torch.from_numpy(xdot).to(device).float()
-            
-            v = coef.clone().detach().requires_grad_(True)
-            d = d_coef.clone().detach().requires_grad_(True)
-            
-            prev = v
-            pre_d = d
-
-            #run a initial run to get the gradient
-            pred, weight,candidate = adaELDPforward(v,d,Zeta,Eta,Delta,Dissip,xdot,device,D_CAL)
-            # lr0 = 1/(torch.norm(candidate,2)**2)
-            lr0 = 1e-11
-            targ = Tau
-            lossval = loss(pred, targ)
-            lossval.backward()
-            with torch.no_grad():
-                pre_lr = lr0
-                pre_pre_lr = lr0
-                lr = lr0
-                pre_v_grad = weight.grad.clone().detach()
-                pre_v = weight.clone().detach()
-                weight = weight - lr * weight.grad
-                weight = proxL1norm(weight,lr*lam,nonpenaltyidx)
-                if D_CAL:
-                    v = weight[:len(expr)].clone().detach().requires_grad_(True)
-                    d = weight[len(expr):].clone().detach().requires_grad_(True)
-                else:
-                    v = weight.clone().detach().requires_grad_(True)
-                weight.grad = None
-            for i in range(it):            
-
-                #forward
-                pred, weight = ELDPforward(v,d,Zeta,Eta,Delta,Dissip,xdot,device,D_CAL)
-                targ = Tau
-                lossval = loss(pred, targ) + lam * torch.norm(v,1)
-                
-                #Backpropagation
-                lossval.backward()
-                with torch.no_grad():
-                    
-                    # lr = stepsize(pre_lr,pre_pre_lr,weight.grad, pre_v_grad,v,pre_v)
-                    lr = 1e-7
-                    pre_pre_lr = pre_lr
-                    pre_lr = lr
-                    pre_v_grad = weight.grad.clone().detach()
-                    if D_CAL:
-                        pre_v = weight[:len(expr)].clone().detach()
-                    else:
-                        pre_v = weight.clone().detach()
-                    weight = weight - lr * pre_v_grad
-                    weight = proxL1norm(weight,lr*lam,nonpenaltyidx)
-                    weight.grad = None
-                    if D_CAL:
-                        v = weight[:len(expr)].clone().detach().requires_grad_(True)
-                        d = weight[len(expr):].clone().detach().requires_grad_(True)
-                    else:
-                        v = weight.clone().detach().requires_grad_(True)
-                    
-            
-                
-                loss_list.append(lossval.item())
-                if i%10 == 0:
-                    print("Iteration : ", i, " Loss : ", lossval.item())
-                    print("Learning rate : ", lr)
-            return v,d, torch.tensor(loss_list).mean().item()
 
 
 
 
-    #adaPGM optimizer
 
     #training loop that return different optimizer based on the global opt_mode variable
 
-    Epoch = 200
+    
     i = 0
-
-    lam = 1
-    lr = 5e-6
     temp = 1000
-    it = 10000
     RHS = [Zeta, Eta, Delta]
 
         # xi_L, xi_d, lossitem= adaPGM(Tau,xi_L,xi_d,RHS,Dissip,Xdot,it,lam=lam,D_CAL=False,device=device)
     print("\n")
     print("Stage 1")    
-    xi_L,xi_d,lossitem = PGD_loop(Tau,xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,bs=100,lr=lr,lam=lam,momentum=True,D_CAL=False,device=device,it=Epoch)
+    xi_L,xi_d,lossitem = train_loop(Tau,xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr,amplifier=0.02,damping=1,weight_decay=0,eps=1e-8, lam=lam0, D_CAL=False, device=device, it=Epoch0)
     temp = lossitem
     i+=1
 
@@ -522,7 +336,7 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
         
         
     ## Thresholding
-    for stage in range(9):
+    for stage in range(6):
 
         #Redefine computation after thresholding
         
@@ -555,7 +369,7 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
 
         
         i = 0
-        
+        lr += lr_step
         if(len(xi_L) <= 8):
             lam = 0
             threshold = 1e-3
@@ -563,20 +377,17 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
         #     lam = 0
         else:
             threshold = 0.01
-            lr_step = 1e-6
-            lr += lr_step
-            lam = 0.3
+            lam = 0.5
         temp = 1000
         RHS = [Zeta, Eta, Delta]
-        batch_size = 100
         print("\n")
         print("Stage " + str(stage+2) + " :") 
-        xi_L,xi_d,lossitem = PGD_loop(Tau,xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,bs=100,lr=lr,lam=lam,momentum=True,D_CAL=False,device=device,it=Epoch)
+        xi_L,xi_d,lossitem = train_loop(Tau,xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr,amplifier=0.02,damping=1,weight_decay=0,eps=1e-8, lam=lam, D_CAL=True, device=device, it=Epoch)
         temp = lossitem
         
         
         ## Thresholding
-        if stage < 100:
+        if stage < 4:
             
             #regularize the biggest coefficient to 20
             idx = torch.argmax(torch.abs(xi_L))
@@ -640,7 +451,56 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
     print("Obtained Lagrangian : ", L)
     print("Obtained Dissipation : ", simplify(D))
 
+    #caluclate the relative error of the obtained coefficients
+    #the real Lagrangian model is m1*l1**2*x0_t**2/2 + m2*(l1**2*x0_t**2/2 + l2**2*x1_t**2/2 + l1*l2*x0_t*x1_t*cos(x0)*cos(x1)+l1*l2*x0_t*x1_t*sin(x0)*sin(x1)) + (m1+m2)*g*l1*cos(x0) + m2*g*l2*cos(x1)
 
+    m1,m2,l1,l2,g = param['m1'],param['m2'],param['L1'],param['L2'],param['g']
+    # Define the symbols
+    x0, x1, x0_t, x1_t = symbols('x0 x1 x0_t x1_t')
+
+    # Define the real Lagrangian model
+    L_real = m1*l1**2*x0_t**2/2 + m2*(l1**2*x0_t**2/2 + l2**2*x1_t**2/2 + l1*l2*x0_t*x1_t*cos(x0)*cos(x1)+l1*l2*x0_t*x1_t*sin(x0)*sin(x1)) + (m1+m2)*g*l1*cos(x0) + m2*g*l2*cos(x1)
+
+    # Simplify the real Lagrangian model if x0_t*x1_t*cos(x0 - x1) appears in the estimated candidates
+    if 'x0_t*x1_t*cos(x0 - x1)' in expr:
+        L_real_simplified = simplify(L_real)
+    else:
+        L_real_simplified = L_real
+
+    # Get the real coefficients
+    real_coeff_dict = L_real_simplified.as_coefficients_dict()
+    # Create a dictionary of estimated coefficients
+    estimated_coeff_dict = filter_dict
+
+
+    #scale the x0_t**2 and use that scaler to scale the other coefficients
+    scale = 1/estimated_coeff_dict[x0_t**2]
+
+    for key in estimated_coeff_dict.keys():
+        estimated_coeff_dict[key] = estimated_coeff_dict[key]*scale
+    print(estimated_coeff_dict)
+    # Ensure that the real and estimated coefficients are in the same order
+    real_coeff_values = []
+    estimated_coeff_values = []
+    for term in real_coeff_dict.keys():
+        real_coeff_values.append(real_coeff_dict[term])
+        # Use get method with default value 0 to avoid KeyError
+        estimated_coeff_values.append(estimated_coeff_dict.get(str(term), 0))
+
+    # Calculate the relative error
+    # Initialize the sum of relative errors
+    sum_relative_errors = 0
+
+    # Calculate the relative error for each coefficient
+    for cand in estimated_coeff_dict.keys():
+        #check if the term is in the real coefficients
+        if cand in real_coeff_dict.keys():
+            real_coeff = real_coeff_dict[cand]
+            estimated_coeff = estimated_coeff_dict[cand]
+            relative_error = abs(real_coeff - estimated_coeff) / abs(real_coeff)
+            sum_relative_errors += relative_error
+        else:
+            sum_relative_errors += 1
 
 
     if(save==True):
@@ -648,6 +508,9 @@ def def main(param=None,device='cuda:0',num_sample=100,noiselevel=0,Epoch=231,Ep
         text_file = open(rootdir + "lagrangian_" + str(noiselevel)+ "_noise.txt", "w")
         text_file.write(L)
         text_file.close()
+    return estimated_coeff_dict, sum_relative_errors
+if __name__ == "__main__":
+    main()
 
 
 

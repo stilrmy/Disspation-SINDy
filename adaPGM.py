@@ -166,15 +166,27 @@ def eval_with_grad(f,w):
 def adaptive_primal_dual(x,y,f,g,h,A,rule,tol=1e-5,max_it=10000):
     gamma,sigma,state = stepsize0(rule)
     h_conj = convex_conjugate(h)
-    A_x = np.dot(A,x)
-    _, grad_x = eval_with_grad(f,x)
-    At_y = np.dot(np.transpose(A),y)
+    # 
+    x_temp = np.repeat(x,2)
+    A_x = np.dot(A,x_temp)
+    _, grad_x = eval_with_grad(f,x_temp)
+    y_temp = np.repeat(y,2)
+    At_y = np.dot(np.transpose(A),y_temp)
+    n = len(x)
+    A_x = np.sum(A_x.reshape(n,2),axis=1)
+    grad_x = np.sum(grad_x.reshape(n,2),axis=1)
+    At_y = np.sum(At_y.reshape(n,2),axis=1)
     v = x - gamma * (grad_x + At_y)
     x_prev,A_x_prev,grad_x_prev = x,A_x,grad_x
     x,_ = prox(g,v,gamma)
     for it in range(max_it):
-        A_x = A*x
-        f_x, grad_x = eval_with_grad(f,x)
+        x_temp = np.repeat(x,2)
+        y_temp = np.repeat(y,2)
+        A_x = np.dot(A,x_temp)
+        f_x, grad_x = eval_with_grad(f,x_temp)
+        n = len(x)
+        A_x = np.sum(A_x.reshape(n,2),axis=1)
+        grad_x = np.sum(grad_x.reshape(n,2),axis=1)
         primal_res = (v-x)/gamma + grad_x + At_y
         gamma_prev = gamma
         gamma,sigma,state = stepsize(rule,state,x,grad_x,x_prev,grad_x_prev)
@@ -185,12 +197,13 @@ def adaptive_primal_dual(x,y,f,g,h,A,rule,tol=1e-5,max_it=10000):
         norm_res = np.sqrt(norm(primal_res)**2 + norm(dual_res)**2)
         if norm_res <= tol:
             return x, y, it
-        At_y = np.transpose(A)*y
+        At_y = np.dot(np.transpose(A),y_temp)
+        At_y = np.sum(At_y.reshape(n,2),axis=1)
         v = x - gamma * (grad_x + At_y)
         x_prev,A_x_prev,grad_x_prev = x,A_x,grad_x
         x, _ = prox(g,v,gamma)
         # print('Iteration: ', it, 'Norm of residual: ', norm_res,'coefficients: ', x)
-        if it % 100 == 0:
+        if it % 10 == 0:
             print('Iteration: ', it, 'Norm of residual: ', norm_res)
         # print('Iteration: ', it, 'Norm of residual: ', norm_res)
     return x, norm_res
