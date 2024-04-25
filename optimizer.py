@@ -9,7 +9,7 @@ class Adsgd(Optimizer):
     Adaptive SGD with estimation of the local smoothness (curvature).
     Based on https://arxiv.org/abs/1910.09529
     """
-    def __init__(self, params, lr=0.2, amplifier=0.02, theta=1, damping=1, eps=1e-5, weight_decay=0):
+    def __init__(self, params, lr=0.2, amplifier=1, theta=1, damping=1, eps=1e-5, weight_decay=0.01, device=torch.device('cpu')):
         if lr is not required and lr < 0.0:
             raise ValueError("Invalid initial learning rate: {}".format(lr))
         if weight_decay < 0.0:
@@ -18,6 +18,8 @@ class Adsgd(Optimizer):
         defaults = dict(lr=lr, amplifier=amplifier, theta=theta, damping=damping,
                         eps=eps, weight_decay=weight_decay)
         super(Adsgd, self).__init__(params, defaults)
+
+        self.device = device  # Set device
 
     def __setstate__(self, state):
         super(Adsgd, self).__setstate__(state)
@@ -34,6 +36,8 @@ class Adsgd(Optimizer):
             for p, prev_p in zip(group['params'], prev_group['params']):
                 if p.grad is None:
                     continue
+                p = p.to(self.device)  # Use self.device
+                prev_p = prev_p.to(self.device)  # Use self.device
                 d_p = p.grad.data
                 prev_d_p = prev_p.grad.data
                 grad_dif_norm += (d_p - prev_d_p).norm().item() ** 2
@@ -72,8 +76,9 @@ class Adsgd(Optimizer):
             for p in group['params']:
                 if p.grad is None:
                     continue
+                p = p.to(self.device)  # Use self.device
                 d_p = p.grad.data
                 if group['weight_decay'] != 0:
-                    d_p.add_(group['weight_decay'], p.data)
+                    d_p.add_(group['weight_decay'], p.data.sign())  # L1 regularization
                 p.data.add_(d_p, alpha=-lr_new)
         return loss

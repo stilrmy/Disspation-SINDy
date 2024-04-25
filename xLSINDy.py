@@ -44,7 +44,7 @@ def LagrangianLibraryTensor(x, xdot, expr, d_expr, states, states_dot, scaling=F
     phi_qdot2 = derive_by_array(phi_qdot, qdot)
     phi_qdotq = derive_by_array(phi_qdot, q)
     d_qdot = derive_by_array(d, qdot)
-    print(d_qdot)
+ 
 
     i, j, k = np.array(phi_qdot2).shape
     l = x.shape[0]
@@ -185,13 +185,33 @@ def ELDPforward(coef,d_coef, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = Fals
     A = torch.einsum('ijkl,il->jkl', Zeta, q_tt)
     candidate = A + C - B
     if D_CAL == True:
-        weight = torch.cat((coef,d_coef),0).requires_grad_(True).clone().detach().requires_grad_(True)
+        weight = torch.cat((coef,d_coef),0).clone().detach().requires_grad_(True)
         candidate = torch.cat((candidate,Dissip),1)
         EL = torch.einsum('jkl,k->jl', candidate, weight)
         return EL,weight
     elif D_CAL == False:
         EL = torch.einsum('jkl,k->jl', candidate, weight)
         return EL,weight
+    
+def ELDPforward_com(weight, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = False):
+    assert D_CAL == True or D_CAL == False, "D_CAL must be either True or False"
+    
+    if(torch.is_tensor(xdot) == False):
+        xdot = torch.from_numpy(xdot).to(device).float()
+    q_t = xdot[:, :2].T
+    q_tt = xdot[:, 2:].T
+
+    C = torch.einsum('ijkl,il->jkl', Eta, q_t)
+    B = Delta
+    A = torch.einsum('ijkl,il->jkl', Zeta, q_tt)
+    candidate = A + C - B
+    if D_CAL == True:
+        candidate = torch.cat((candidate,Dissip),1)
+        EL = torch.einsum('jkl,k->jl', candidate, weight)
+        return EL
+    elif D_CAL == False:
+        EL = torch.einsum('jkl,k->jl', candidate, weight)
+        return EL
     
 def adaELDPforward(coef,d_coef, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = False):
     assert D_CAL == True or D_CAL == False, "D_CAL must be either True or False"

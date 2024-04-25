@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
-from double_pendulum_train_active_PGD import main as run_algorithm
+from tqdm import tqdm
+from double_pendulum_train_active_ADMM import main as run_algorithm
 
 # Define the success criterion
 def is_success(error, tolerance=0.02):
@@ -21,15 +22,12 @@ for noise_level in noise_levels:
     errors = []
     epochs = []
 
-    for i in range(total_runs):
+    for i in tqdm(range(total_runs), desc=f"Noise level: {noise_level}"):
         try:
             # Run your algorithm with the current noise level
-            estimated_coeff_dict, error, epoch = run_algorithm(noiselevel=noise_level)
+            estimated_coeff_dict, error, epoch = run_algorithm(noiselevel=noise_level,display=False)
 
             # Record the error and the number of epochs
-            
-
-            # Check if the run was a success
             if is_success(error):
                 successes += 1
                 errors.append(error)
@@ -45,9 +43,6 @@ for noise_level in noise_levels:
     average_errors.append(np.mean(errors))
     average_epochs.append(np.mean(epochs))
 
-#save the success rate tendency
-
-
 # Create a DataFrame to store the results
 df = pd.DataFrame({
     'Noise Level': noise_levels,
@@ -58,6 +53,7 @@ df = pd.DataFrame({
 
 # Save the DataFrame to a CSV file
 df.to_csv('results.csv', index=False)
+
 # Print the success rates, average errors, and average number of epochs for each noise level
 for noise_level, success_rate, avg_error, avg_epochs in zip(noise_levels, success_rates, average_errors, average_epochs):
     print(f"Noise level: {noise_level}")
