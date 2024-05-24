@@ -59,98 +59,129 @@ def LagrangianLibraryTensor(x, xdot, expr, d_expr, states, states_dot,device, sc
     # print("dissip_qdot_shape",d_qdot.shape)
 
     l = x.shape[0]
-    # if len(np.array(phi_qdot2).shape) == 1:
-    #     j = int(np.array(phi_qdot2).shape[0])
-    #     Delta = torch.ones(j, l,device=device)
-    #     Zeta = torch.ones(j, l,device=device)
-    #     Eta = torch.ones(j, l,device=device)
-    # else:
-    i, j, k = np.array(phi_qdot2).shape
-    p,q = np.array(d_qdot).shape
-    Delta = torch.ones(j, k, l,device=device)
-    Zeta = torch.ones(i, j, k, l,device=device)
-    Eta = torch.ones(i, j, k, l,device=device)
-    Dissip = torch.ones(p,q, l,device=device)
-
-
+    if len(np.array(phi_qdot2).shape) == 1:
+        j = int(np.array(phi_qdot2).shape[0])
+        Delta = torch.ones(j, l,device=device)
+        Zeta = torch.ones(j, l,device=device)
+        Eta = torch.ones(j, l,device=device)
+    else:
+        i, j, k = np.array(phi_qdot2).shape
+        p,q = np.array(d_qdot).shape
+        Delta = torch.ones(j, k, l,device=device)
+        Zeta = torch.ones(i, j, k, l,device=device)
+        Eta = torch.ones(i, j, k, l,device=device)
+        Dissip = torch.ones(p,q, l,device=device)
     for idx in range(len(states)):
         locals()[states[idx]] = x[:, idx]
         "adding new variables x0/x1.... at time series"
         'combine with the eval() to compute the value'
         locals()[states_dot[idx]] = xdot[:, idx]
+    if len(np.array(phi_q).shape) == 1:
+            for n in range(j):
+                delta = eval(str(phi_q[n]))
+                zeta = eval(str(phi_qdot2[n]))
+                eta = eval(str(phi_qdotq[n]))
+                'time series of the value of phi_q'
 
-    
-    for n in range(p):
-        for m in range(q):
-            dissip = eval(str(d_qdot[n,m]))
-            #turn the dissip into tensor if it is int
-            if(isinstance(dissip, int)):
-                dissip = torch.tensor(dissip)
-                Dissip[n,m,:] = dissip*Dissip[n,m,:]               
-            else:
-                dissip = dissip.to(device).float()
-                # scales = torch.max(dissip) - torch.min(dissip)
-                # dissip = dissip/scales
-                Dissip[n,m,:] = dissip
-
-
-
-    for n in range(j):
-        for o in range(k):
-            delta = eval(str(phi_q[n, o]))
-            'time series of the value of phi_q'
             if(isinstance(delta, int)):
-                Delta[n, o, :] = delta*Delta[n, o, :]
+                Delta[n, :] = delta*Delta[n, :]
             else:
-                delta = delta.to(device).float()
-                # scales = torch.max(delta) - torch.min(delta)
-                # delta = delta/scales
-                Delta[n, o, :] = delta
-            # else:
-            #     # Feature Scaling
-            #     if(scaling == True):
-            #         scales = torch.max(delta) - torch.min(delta)
-            #         delta = delta/scales
-            #     Delta[n, o, :] = delta
+                # Feature Scaling
+                if(scaling == True):
+                    scales = torch.max(delta) - torch.min(delta)
+                    delta = delta/scales
+                Delta[n, :] = delta
 
-    for m in range(i):
+            if (isinstance(zeta, int)):
+                Zeta[n, :] = zeta * Zeta[n, :]
+            else:
+                # Feature Scaling
+                if (scaling == True):
+                    scales = torch.max(zeta) - torch.min(zeta)
+                    zeta = zeta / scales
+                Zeta[n, :] = zeta
+
+            if (isinstance(eta, int)):
+                Eta[n, :] = eta * Eta[n, :]
+            else:
+                # Feature Scaling
+                if (scaling == True):
+                    scales = torch.max(eta) - torch.min(eta)
+                    eta = eta / scales
+                Eta[n, :] = eta
+
+    else:
+        for n in range(p):
+            for m in range(q):
+                dissip = eval(str(d_qdot[n,m]))
+                #turn the dissip into tensor if it is int
+                if(isinstance(dissip, int)):
+                    dissip = torch.tensor(dissip)
+                    Dissip[n,m,:] = dissip*Dissip[n,m,:]               
+                else:
+                    dissip = dissip.to(device).float()
+                    # scales = torch.max(dissip) - torch.min(dissip)
+                    # dissip = dissip/scales
+                    Dissip[n,m,:] = dissip
+
+
+
         for n in range(j):
             for o in range(k):
-                zeta = eval(str(phi_qdot2[m, n, o]))
-                eta = eval(str(phi_qdotq[m, n, o]))
-                if(isinstance(zeta, int)):
-                    zeta = torch.tensor(zeta)
-                    Zeta[m, n, o, :] = zeta*Zeta[m, n, o, :]
+                delta = eval(str(phi_q[n, o]))
+                'time series of the value of phi_q'
+                if(isinstance(delta, int)):
+                    Delta[n, o, :] = delta*Delta[n, o, :]
                 else:
-                    zeta = zeta.to(device).float()
-                    # scales = torch.max(zeta) - torch.min(zeta)
-                    # zeta = zeta/scales
-                    Zeta[m, n, o, :] = zeta
-                if(isinstance(eta, int)):
-                    eta = torch.tensor(eta)
-                    Eta[m, n, o, :] = eta*Eta[m, n, o, :]
-                else:
-                    eta = eta.to(device).float()
-                    # scales = torch.max(eta) - torch.min(eta)
-                    # eta = eta/scales
-                    Eta[m, n, o, :] = eta
-                # if(isinstance(zeta, int)):
-
+                    delta = delta.to(device).float()
+                    # scales = torch.max(delta) - torch.min(delta)
+                    # delta = delta/scales
+                    Delta[n, o, :] = delta
                 # else:
                 #     # Feature Scaling
                 #     if(scaling == True):
-                #         scales = torch.max(zeta) - torch.min(zeta)
-                #         zeta = zeta/scales
-                #     Zeta[m, n, o, :] = zeta
+                #         scales = torch.max(delta) - torch.min(delta)
+                #         delta = delta/scales
+                #     Delta[n, o, :] = delta
 
-                # if(isinstance(eta, int)):
+        for m in range(i):
+            for n in range(j):
+                for o in range(k):
+                    zeta = eval(str(phi_qdot2[m, n, o]))
+                    eta = eval(str(phi_qdotq[m, n, o]))
+                    if(isinstance(zeta, int)):
+                        zeta = torch.tensor(zeta)
+                        Zeta[m, n, o, :] = zeta*Zeta[m, n, o, :]
+                    else:
+                        zeta = zeta.to(device).float()
+                        # scales = torch.max(zeta) - torch.min(zeta)
+                        # zeta = zeta/scales
+                        Zeta[m, n, o, :] = zeta
+                    if(isinstance(eta, int)):
+                        eta = torch.tensor(eta)
+                        Eta[m, n, o, :] = eta*Eta[m, n, o, :]
+                    else:
+                        eta = eta.to(device).float()
+                        # scales = torch.max(eta) - torch.min(eta)
+                        # eta = eta/scales
+                        Eta[m, n, o, :] = eta
+                    # if(isinstance(zeta, int)):
 
-                # else:
-                #     # Feature Scaling
-                #     if(scaling == True):
-                #         scales = torch.max(eta) - torch.min(eta)
-                #         eta = eta/scales
-                #     Eta[m, n, o, :] = eta
+                    # else:
+                    #     # Feature Scaling
+                    #     if(scaling == True):
+                    #         scales = torch.max(zeta) - torch.min(zeta)
+                    #         zeta = zeta/scales
+                    #     Zeta[m, n, o, :] = zeta
+
+                    # if(isinstance(eta, int)):
+
+                    # else:
+                    #     # Feature Scaling
+                    #     if(scaling == True):
+                    #         scales = torch.max(eta) - torch.min(eta)
+                    #         eta = eta/scales
+                    #     Eta[m, n, o, :] = eta
     return Zeta, Eta, Delta, Dissip
 
 

@@ -56,118 +56,10 @@ def proxL1norm(w_hat, alpha, nonpenaltyidx):
         w[idx] = w_hat[idx]
     return w
 
-#ADAM optimizer
-def SR_loop(Tau, coef, prevcoef, d_coef, RHS, Dissip, xdot, bs, epoch, lr, lam,beta1=0.9,beta2=0.999,eps=1e-8,D_CAL=False,device='cuda:0'):
-    Zeta, Eta, Delta = RHS
-    predcoef = coef.clone().detach().to(device).requires_grad_(True)
-    loss_list = []
-    tl = xdot.shape[0]
-    n = xdot.shape[1]
-    t = coef.shape[0]
-    weight = coef.clone().detach().to(device).requires_grad_(True)
-    if D_CAL:
-        weight = torch.cat((weight, d_coef.clone().detach().to(device).requires_grad_(True)),0)
-
-    # Initialize moving averages for Adam
-    m = torch.zeros_like(weight)
-    v = torch.zeros_like(weight)
-    for j in range(epoch):
-        for i in range(tl//bs):
-            #computing acceleration with momentum
-            what = weight.requires_grad_(True).clone().detach().to(device).requires_grad_(True)
-
-            
-
-            #Computing loss
-            zeta = Zeta[:,:,:,i*bs:(i+1)*bs]
-            eta = Eta[:,:,:,i*bs:(i+1)*bs]
-            delta = Delta[:,:,i*bs:(i+1)*bs]
-            dissip = Dissip[:,:,i*bs:(i+1)*bs]
-            tau = Tau[:,i*bs:(i+1)*bs]
-            x_t = xdot[i*bs:(i+1)*bs,:]
-            #forward
-            pred, weight = ELDPforward(weight[:t], weight[t:], zeta, eta, delta,dissip, x_t, device,D_CAL)
-            targ = tau 
-            lossval = loss(pred, targ)
-            l1_norm = torch.norm(weight[:t], 1)
-            lossval = lossval + lam * l1_norm 
-            #Backpropagation
-            lossval.backward()
-            with torch.no_grad():
-                # Update moving averages
-                m = beta1 * m + (1 - beta1) * weight.grad
-                v = beta2 * v + (1 - beta2) * weight.grad ** 2
-                # Compute bias-corrected moving averages
-                m_hat = m / (1 - beta1 ** (i + 1))
-                v_hat = v / (1 - beta2 ** (i + 1))
-                # Update parameters
-                weight = weight - lr * m_hat / (torch.sqrt(v_hat) + eps)
-                #reset gradient
-                weight.grad = None
-            vhat = weight[:t]
-            if D_CAL:
-                dhat = weight[t:]
-
-            loss_list.append(lossval.item())
-        if j % 10 == 0:
-            print("Epoch : ", j, "/", epoch)
-            print("Average loss : " , torch.tensor(loss_list).mean().item())
-    return vhat, dhat, torch.tensor(loss_list).mean().item()
-
-#PGD optimizer
-
-
-def adaPGM(Tau, coef, RHS, Dissip, xdot, bs, lam):
-    
-    loss_list = []
-    tl = xdot.shape[0]
-    n = coef.shape[0]
-    Zeta, Eta, Delta = RHS
-    if(torch.is_tensor(xdot)==False):
-        xdot = torch.from_numpy(xdot).to(device).float()
-
-    class LinearLeastSquares():
-        def __init__(self, A = 0, b = 0):
-            self.A = A
-            self.b = b
-
-    
-    zeta = Zeta
-    eta = Eta
-    delta = Delta
-    tau = Tau
-    x_t = xdot
-
-    A = candidate_forward(zeta,eta,delta,x_t,device)
-    A = A.reshape(-1, 79)
-    tau = tau.reshape(-1)
-    tau = tau.cpu().detach().numpy()
-    A = A.cpu().detach().numpy()
-    gam_init = 1 / np.linalg.norm(A,ord=2)**2
-    f = LinearLeastSquares(A,tau)
-    g = NormL1(lambda_=lam)
-    coef, loss = adaptive_primal_dual(np.zeros(n), np.zeros(n), f, g, h = Zero(), A = 0, rule = OurRule(gamma = gam_init), tol = 1e-5, max_it = 3000)
-    coef = torch.tensor(coef,device=device).float()
-    #regularize the biggest coefficient to 10
-    idx = torch.argmax(torch.abs(coef))
-    coef = coef / coef[idx] * 10
-    return coef, None, None, loss
 
 
 
-
-    if(opt_mode=="ADAM"):
-        return SR_loop(Tau, coef, prevcoef,d_coef, RHS, Dissip, xdot, bs, lr, lam)
-    elif(opt_mode=="PGD"):
-        return PGD_loop(Tau, coef, prevcoef,d_coef,RHS, Dissip, xdot, bs, lr, lam)
-    elif(opt_mode=="adaPGM"):
-        return adaPGM(Tau, coef, RHS, Dissip, xdot, bs, lam)
-    else:
-        print("Invalid opt_mode")
-        return None
-
-
-def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=150,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=1e-6,tol=1e-5):
+def main(param=None,device='cuda:4',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=2e-5,lr_step=4e-6,lam0=2,lam=0.4,batch_size=128,threshold_d=1e-6,tol=1e-5,display=True):
 #default setting, works well for most cases
 # def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=0):
 #optuna best setting
@@ -196,7 +88,8 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
     save = False
 
     if(create_data):
-        print("Creating Data")
+        if display:
+            print("Creating Data")
         X, Xdot = [], []
         for i in range(num_sample):
             t = np.arange(0,5,0.01)
@@ -244,8 +137,9 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
         else:
             states = states + (symbols('x{}_t'.format(i-states_dim//2)),)
             states_dot = states_dot + (symbols('x{}_tt'.format(i-states_dim//2)),)
-    print('states are:',states)
-    print('states derivatives are: ', states_dot)
+    if display:
+        print('states are:',states)
+        print('states derivatives are: ', states_dot)
 
 
     #Turn from sympy to str
@@ -339,7 +233,7 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
     xi_d = torch.ones(len(d_expr), device=device).data.uniform_(-5,5)
 
 
-    def PGD_loop(Tau, coef, prevcoef,d_coef, RHS, Dissip, xdot, bs, lr, lam, momentum=True, D_CAL=False,device='cuda:0'):
+    def PGD_loop(Tau, coef, prevcoef,d_coef, RHS, Dissip, xdot, bs, lr, lam, momentum=False, D_CAL=False,device='cuda:0'):
         loss_list = []
         tl = xdot.shape[0]
         n = xdot.shape[1]
@@ -400,7 +294,8 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
         
             
             loss_list.append(lossval.item())
-        print("Average loss : " , torch.tensor(loss_list).mean().item())
+        if display:
+            print("Average loss : " , torch.tensor(loss_list).mean().item())
         return v, prevcoef,d, torch.tensor(loss_list).mean().item()
 
 
@@ -408,17 +303,19 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
     i = 0
     temp = 1000
     RHS = [Zeta, Eta, Delta]
-
+    loss_log = []
     while(i<=Epoch0):
-        print("\n")
-        print("Stage 1")
-        print("Epoch "+str(i) + "/" + str(Epoch0))
-        print("Learning rate : ", lr)
+        if display:
+            print("\n")
+            print("Stage 1")
+            print("Epoch "+str(i) + "/" + str(Epoch0))
+            print("Learning rate : ", lr)
         xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam0,device=device)
         temp = lossitem
+        loss_log.append(lossitem)
         i+=1
         if math.isnan(temp):
-            return xi_L,100
+            return 100,0
 
 
     ## Thresholding
@@ -433,13 +330,14 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
     ## obtaining analytical model
     xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=2)
     L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-3)
-    print("Result stage 1: ", simplify(L))
+    if display:
+        print("Result stage 1: ", simplify(L))
 
     last_ten_loss = []
     converged = False
     quiting = 0
     ## Next round selection ##
-    for stage in range(100):
+    for stage in range(25):
 
         #Redefine computation after thresholding
         
@@ -473,14 +371,17 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
       
         i = 0
         
-        if(len(xi_L)+len(xi_d) < 8):
+        if(len(xi_L)+len(xi_d) <= 8):
             lam = 0
             threshold = 1e-3
+            converged = True
+            quiting = 2
+            Epoch = 500
         # elif(len(xi_L) <= 8):
         #     lam = 0
         else:
             threshold = 0.01
-            
+            lr += lr_step
             lam = lam
         if quiting == 1:
             threshold_d = 0.1
@@ -489,11 +390,13 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
         RHS = [Zeta, Eta, Delta]
         
         while(i<=Epoch):
-            print("\n")
-            print("Stage " + str(stage+2))
-            print("Epoch "+str(i) + "/" + str(Epoch))
-            print("Learning rate : ", lr)
+            if display:
+                print("\n")
+                print("Stage " + str(stage+2))
+                print("Epoch "+str(i) + "/" + str(Epoch))
+                print("Learning rate : ", lr)
             xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam,D_CAL=True,device=device)
+            loss_log.append(lossitem)
             i+=1
             #attend to loss list, if the size of the loss list is less than 10, append the loss value, else pop the first element and append the new loss value
             if len(last_ten_loss) < 10:
@@ -504,36 +407,40 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
             #calculate the changes in the loss value, if the all changes are less than a threshold, break the loop
             if len(last_ten_loss) == 10:
                 if all(abs(last_ten_loss[i] - last_ten_loss[i+1]) < tol for i in range(len(last_ten_loss)-1)):
-                    print("training is converged")
-                    print("last ten loss values : ",    last_ten_loss)
+                    if display:
+                        print("training is converged")
+                        print("last ten loss values : ",    last_ten_loss)
                     converged = True
             if math.isnan(temp):
-                return xi_L,100
+                return 100,0
             if(temp <= 1e-3):
                 break
         
         
         ## Thresholding
-        if stage < 2:
+        if stage < 1:
             
             #regularize the biggest coefficient to 20
             idx = torch.argmax(torch.abs(xi_L))
-            xi_Ltemp = xi_L / xi_L[idx] * 20
+            cof = (param['m1']+param['m2'])*param['g']*param['L1']
+            xi_Ltemp = xi_L / xi_L[idx] * cof
             surv_index = ((torch.abs(xi_Ltemp) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
             expr = np.array(expr)[surv_index].tolist()
 
             xi_L =xi_L[surv_index].clone().detach().requires_grad_(True)
             xi_d = xi_d.clone().detach().requires_grad_(True)
             prevxi_L = xi_L.clone().detach()
-            print(xi_L)
+            if display:
+                print(xi_L)
             ## obtaining analytical model
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
             # print("Result stage " + str(stage+2) + ":" , simplify(L))
-            print("Result stage " + str(stage+2) + ":" , L)
-            print("simplified : ", simplify(L))
-            print("Dissipation : ", simplify(D))
+            if display:
+                print("Result stage " + str(stage+2) + ":" , L)
+                print("simplified : ", simplify(L))
+                print("Dissipation : ", simplify(D))
             #if the training is converged, run a extra round with strict threshold to remove uneccessary terms, then break the loop
             if converged:
                 if quiting == 2:
@@ -542,11 +449,13 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
                     quiting += 1
 
         else:
-            print("thresholding using the simplified expression")
+            if display:
+                print("thresholding using the simplified expression")
         ## Thresholding
             ## obtaining analytical model
             #calculate the relative threshold
-            scaler = 20 / torch.abs(xi_L).max().item()
+
+            scaler = cof / torch.abs(xi_L).max().item()
             xi_L = xi_L * scaler
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
@@ -554,7 +463,7 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
             L_simplified = simplify(L)
             x0, x1,x0_t,x1_t = symbols('x0 x1 x0_t x1_t')
             coeff_dict = L_simplified.as_coefficients_dict()
-            print(coeff_dict)
+
             scaler = coeff_dict['x0_t**2']
             relative_threshold = threshold * scaler
             #check the value of the coefficients, if the value is less than the relative threshold, remove the term
@@ -579,24 +488,27 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
 
         
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
-            print("Result stage " + str(stage+2) + ":" , L)
-            print("Dissipation : ", simplify(D))
+            if display:
+                print("Result stage " + str(stage+2) + ":" , L)
+                print("Dissipation : ", simplify(D))
+                total_epoch = (stage+1) * Epoch + Epoch0
             if converged:
                 #if the training is converged, run a extra round with strict threshold to remove uneccessary terms, then break the loop
                 if quiting == 2:
-                    total_epoch = stage * Epoch + Epoch0
+                    total_epoch = stage * Epoch + Epoch0 + 1000
                     break
                 else:
                     quiting += 1
 
 
 
-    ## Adding known terms
+    
     L = str(simplify(L)) 
     D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
-    print("\m")
-    print("Obtained Lagrangian : ", L)
-    print("Obtained Dissipation : ", simplify(D))
+    if display:
+        print("\m")
+        print("Obtained Lagrangian : ", L)
+        print("Obtained Dissipation : ", simplify(D))
     #caluclate the relative error of the obtained coefficients
     #the real Lagrangian model is m1*l1**2*x0_t**2/2 + m2*(l1**2*x0_t**2/2 + l2**2*x1_t**2/2 + l1*l2*x0_t*x1_t*cos(x0)*cos(x1)+l1*l2*x0_t*x1_t*sin(x0)*sin(x1)) + (m1+m2)*g*l1*cos(x0) + m2*g*l2*cos(x1)
 
@@ -607,9 +519,12 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
     # Define the real Lagrangian model
     L_real = m1*l1**2*x0_t**2/2 + m2*(l1**2*x0_t**2/2 + l2**2*x1_t**2/2 + l1*l2*x0_t*x1_t*cos(x0)*cos(x1)+l1*l2*x0_t*x1_t*sin(x0)*sin(x1)) + (m1+m2)*g*l1*cos(x0) + m2*g*l2*cos(x1)
 
+    L_simp =  m1*l1**2*x0_t**2/2 + m2*(l1**2*x0_t**2/2 + l2**2*x1_t**2/2 + l1*l2*x0_t*x1_t*cos(x0-x1)) + (m1+m2)*g*l1*cos(x0) + m2*g*l2*cos(x1)
+
+
     # Simplify the real Lagrangian model if x0_t*x1_t*cos(x0 - x1) appears in the estimated candidates
     if 'x0_t*x1_t*cos(x0 - x1)' in expr:
-        L_real_simplified = simplify(L_real)
+        L_real_simplified = L_simp
     else:
         L_real_simplified = L_real
 
@@ -624,7 +539,7 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
 
     for key in estimated_coeff_dict.keys():
         estimated_coeff_dict[key] = estimated_coeff_dict[key]*scale
-    print(estimated_coeff_dict)
+
     # Ensure that the real and estimated coefficients are in the same order
     real_coeff_values = []
     estimated_coeff_values = []
@@ -647,9 +562,11 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
             sum_relative_errors += relative_error
         else:
             sum_relative_errors += 1
-
+    np.save('/mnt/ssd1/stilrmy/finished_work/SINDy_with_Rdf/loss_log_PGD.npy',loss_log)
+    print("loss log saved")
     # Print the relative errors
-    print("The relative errors are:", sum_relative_errors)
+    if display:
+        print("The relative errors are:", sum_relative_errors)
     
 
 
@@ -661,7 +578,7 @@ def main(param=None,device='cuda:5',opt_mode='PGD',num_sample=100,noiselevel=0,E
         text_file = open(rootdir + "lagrangian_" + str(noiselevel)+ "_noise.txt", "w")
         text_file.write(L)
         text_file.close()
-    return estimated_coeff_dict, sum_relative_errors,total_epoch
+    return  sum_relative_errors,total_epoch
 if __name__ == "__main__":
     main()
 

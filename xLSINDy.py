@@ -46,66 +46,121 @@ def LagrangianLibraryTensor(x, xdot, expr, d_expr, states, states_dot, scaling=F
     d_qdot = derive_by_array(d, qdot)
  
 
-    i, j, k = np.array(phi_qdot2).shape
+    
     l = x.shape[0]
-    Delta = torch.ones(j, k, l)
-    Zeta = torch.ones(i, j, k, l)
-    Eta = torch.ones(i, j, k, l)
-    p,q = np.array(d_qdot).shape
-    Dissip = torch.ones(p, q, l)
+
+    if x.shape[1] == 2:
+        j = int(np.array(phi_qdot2).shape[0])
+        Delta = torch.ones(j, l)
+        Zeta = torch.ones(j, l)
+        Eta = torch.ones(j, l)
+        p = np.array(d_qdot).shape[0]
+        Dissip = torch.ones(p, l)
+
+    else:
+
+        i, j, k = np.array(phi_qdot2).shape
+        p,q = np.array(d_qdot).shape
+        Delta = torch.ones(j, k, l)
+        Zeta = torch.ones(i, j, k, l)
+        Eta = torch.ones(i, j, k, l)
+        Dissip = torch.ones(p,q, l)
 
 
     for idx in range(len(states)):
         locals()[states[idx]] = x[:, idx]
         locals()[states_dot[idx]] = xdot[:, idx]
 
-    for h in range(p):
-        for z in range(q):
-            dissip = eval(str(d_qdot[h,z]))
-            #turn the dissip into tensor if it is int
-            if(isinstance(dissip, int)):
-                Dissip[h,z,:] = dissip*Dissip[h,z,:]               
-            else:
-                if (scaling == True):
-                    scales = torch.max(dissip) - torch.min(dissip)
-                    dissip = dissip/scales
-                Dissip[h,z,:] = dissip
+    if x.shape[1] == 2:
+        for n in range(j):
+            delta = eval(str(phi_q[n]))
+            zeta = eval(str(phi_qdot2[n]))
+            eta = eval(str(phi_qdotq[n]))
+            'time series of the value of phi_q'
 
-    for n in range(j):
-        for o in range(k):
-            delta = eval(str(phi_q[n, o]))
             if(isinstance(delta, int)):
-                Delta[n, o, :] = delta*Delta[n, o, :]
+                Delta[n, :] = delta*Delta[n, :]
             else:
                 # Feature Scaling
                 if(scaling == True):
                     scales = torch.max(delta) - torch.min(delta)
                     delta = delta/scales
-                Delta[n, o, :] = delta
+                Delta[n, :] = delta
 
-    for m in range(i):
+            if (isinstance(zeta, int)):
+                Zeta[n, :] = zeta * Zeta[n, :]
+            else:
+                # Feature Scaling
+                if (scaling == True):
+                    scales = torch.max(zeta) - torch.min(zeta)
+                    zeta = zeta / scales
+                Zeta[n, :] = zeta
+
+            if (isinstance(eta, int)):
+                Eta[n, :] = eta * Eta[n, :]
+            else:
+                # Feature Scaling
+                if (scaling == True):
+                    scales = torch.max(eta) - torch.min(eta)
+                    eta = eta / scales
+                Eta[n, :] = eta
+            dissip = eval(str(d_qdot))
+            #turn the dissip into tensor if it is int
+            if(isinstance(dissip, int)):
+                Dissip[:,:] = dissip*Dissip[:,:]               
+            else:
+                if (scaling == True):
+                    scales = torch.max(dissip) - torch.min(dissip)
+                    dissip = dissip/scales
+                Dissip[:,:] = dissip
+    else:
+
         for n in range(j):
             for o in range(k):
-                zeta = eval(str(phi_qdot2[m, n, o]))
-                eta = eval(str(phi_qdotq[m, n, o]))
-
-                if(isinstance(zeta, int)):
-                    Zeta[m, n, o, :] = zeta*Zeta[m, n, o, :]
+                delta = eval(str(phi_q[n, o]))
+                if(isinstance(delta, int)):
+                    Delta[n, o, :] = delta*Delta[n, o, :]
                 else:
                     # Feature Scaling
                     if(scaling == True):
-                        scales = torch.max(zeta) - torch.min(zeta)
-                        zeta = zeta/scales
-                    Zeta[m, n, o, :] = zeta
+                        scales = torch.max(delta) - torch.min(delta)
+                        delta = delta/scales
+                    Delta[n, o, :] = delta
 
-                if(isinstance(eta, int)):
-                    Eta[m, n, o, :] = eta*Eta[m, n, o, :]
+        for m in range(i):
+            for n in range(j):
+                for o in range(k):
+                    zeta = eval(str(phi_qdot2[m, n, o]))
+                    eta = eval(str(phi_qdotq[m, n, o]))
+
+                    if(isinstance(zeta, int)):
+                        Zeta[m, n, o, :] = zeta*Zeta[m, n, o, :]
+                    else:
+                        # Feature Scaling
+                        if(scaling == True):
+                            scales = torch.max(zeta) - torch.min(zeta)
+                            zeta = zeta/scales
+                        Zeta[m, n, o, :] = zeta
+
+                    if(isinstance(eta, int)):
+                        Eta[m, n, o, :] = eta*Eta[m, n, o, :]
+                    else:
+                        # Feature Scaling
+                        if(scaling == True):
+                            scales = torch.max(eta) - torch.min(eta)
+                            eta = eta/scales
+                        Eta[m, n, o, :] = eta
+        for h in range(p):
+            for z in range(q):
+                dissip = eval(str(d_qdot[h,z]))
+                #turn the dissip into tensor if it is int
+                if(isinstance(dissip, int)):
+                    Dissip[h,z,:] = dissip*Dissip[h,z,:]               
                 else:
-                    # Feature Scaling
-                    if(scaling == True):
-                        scales = torch.max(eta) - torch.min(eta)
-                        eta = eta/scales
-                    Eta[m, n, o, :] = eta
+                    if (scaling == True):
+                        scales = torch.max(dissip) - torch.min(dissip)
+                        dissip = dissip/scales
+                    Dissip[h,z,:] = dissip
     return Zeta, Eta, Delta, Dissip
 
 
@@ -174,7 +229,7 @@ def ELforward(coef, Zeta, Eta, Delta, xdot, device):
 
 def ELDPforward(coef,d_coef, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = False):
     assert D_CAL == True or D_CAL == False, "D_CAL must be either True or False"
-    weight =  coef
+    weight =  coef.clone().detach().requires_grad_(True)
     if(torch.is_tensor(xdot) == False):
         xdot = torch.from_numpy(xdot).to(device).float()
     q_t = xdot[:, :2].T
@@ -186,6 +241,50 @@ def ELDPforward(coef,d_coef, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = Fals
     candidate = A + C - B
     if D_CAL == True:
         weight = torch.cat((coef,d_coef),0).clone().detach().requires_grad_(True)
+        candidate = torch.cat((candidate,Dissip),1)
+        EL = torch.einsum('jkl,k->jl', candidate, weight)
+        return EL,weight
+    elif D_CAL == False:
+        EL = torch.einsum('jkl,k->jl', candidate, weight)
+        return EL,weight
+    
+def ELDPforward_c(coef,d_coef, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = False):
+    assert D_CAL == True or D_CAL == False, "D_CAL must be either True or False"
+    weight =  coef.clone().detach().requires_grad_(True)
+    if(torch.is_tensor(xdot) == False):
+        xdot = torch.from_numpy(xdot).to(device).float()
+    q_t = xdot[:, 0].T
+    q_tt = xdot[:, 1].T
+    q_t = q_t.flatten()
+    q_tt = q_tt.flatten()
+
+    C = torch.einsum('il,l->il', Eta, q_t)
+    B = Delta
+    A = torch.einsum('il,l->il', Zeta, q_tt)
+    candidate = A + C - B
+    if D_CAL == True:
+        weight = torch.cat((coef,d_coef),0).clone().detach().requires_grad_(True)
+        candidate = torch.cat((candidate,Dissip),0)
+        EL = torch.einsum('il,i->l', candidate, weight)
+        return EL,weight
+    elif D_CAL == False:
+        EL = torch.einsum('il,i->l', candidate, weight)
+        return EL,weight
+    
+def ELDPforward_b(coef,d_coef, Zeta, Eta, Delta, Dissip, xdot, device,D_CAL = False):
+    assert D_CAL == True or D_CAL == False, "D_CAL must be either True or False"
+    weight =  coef
+    if(torch.is_tensor(xdot) == False):
+        xdot = torch.from_numpy(xdot).to(device).float()
+    q_t = xdot[:, :2].T
+    q_tt = xdot[:, 2:].T
+
+    C = torch.einsum('ijkl,il->jkl', Eta, q_t)
+    B = Delta
+    A = torch.einsum('ijkl,il->jkl', Zeta, q_tt)
+    candidate = A + C - B
+    if D_CAL == True:
+        weight = torch.cat((coef,d_coef),0).requires_grad_(True)
         candidate = torch.cat((candidate,Dissip),1)
         EL = torch.einsum('jkl,k->jl', candidate, weight)
         return EL,weight

@@ -52,7 +52,7 @@ df = pd.DataFrame({
 })
 
 # Save the DataFrame to a CSV file
-df.to_csv('results.csv', index=False)
+df.to_csv('/mnt/ssd1/stilrmy/finished_work/SINDy_with_Rdf/results_PGD_ca.csv', index=False)
 
 # Print the success rates, average errors, and average number of epochs for each noise level
 for noise_level, success_rate, avg_error, avg_epochs in zip(noise_levels, success_rates, average_errors, average_epochs):

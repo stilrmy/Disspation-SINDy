@@ -1,13 +1,110 @@
 import numpy as np
 import pandas as pd
-from double_pendulum_train_active_PGD import main as run_algorithm
+from tqdm import tqdm
+from finished_work.SINDy_with_Rdf.double_pendulum_train_active_APGD import main as run_algorithm
 
 # Define the success criterion
-def is_success(error, tolerance=0.02):
+def is_success(error, tolerance=0.2):
     return error < tolerance
 
+param = {}
+param['L1'] = 1
+param['L2'] = 1
+param['m1'] = 1
+param['m2'] = 1
+param['b1'] = 0.2
+param['b2'] = 0.2
+param['tau0'] = 0.1
+param['omega1'] = 0.5
+param['omega2'] = 0.3
+param['phi'] = 0
+param['g'] = 9.81
+
+param1 = param.copy()
+param1['l1'] = 0.5
+param1['l2'] = 0.5
+param1['m1'] = 1.5
+param1['m2'] = 1.5
+param2 = param.copy()
+param2['m1'] = 1.5
+param2['m2'] = 1.5
+param3 = param.copy()
+param3['l1'] = 1.5
+param3['l2'] = 1.5
+param3['m1'] = 1.5
+param3['m2'] = 1.5
+param4 = param.copy()
+param4['l1'] = 0.5
+param4['l2'] = 0.5
+param5 = param.copy()
+param6 = param.copy()
+param6['l1'] = 1.5
+param6['l2'] = 1.5
+param7 = param.copy()
+param7['m1'] = 0.5
+param7['m2'] = 0.5
+param7['l1'] = 0.5
+param7['l2'] = 0.5
+param8 = param.copy()
+param8['m1'] = 0.5
+param8['m2'] = 0.5
+param9 = param.copy()
+param9['m1'] = 0.5
+param9['m2'] = 0.5
+param9['l1'] = 1.5
+param9['l2'] = 1.5
+
+param0 = {}
+param0['L1'] = 1
+param0['L2'] = 1
+param0['m1'] = 1
+param0['m2'] = 1
+param0['b1'] = 0.05
+param0['b2'] = 0.05
+param0['tau0'] = 0.1
+param0['omega1'] = 0.5
+param0['omega2'] = 0.3
+param0['phi'] = 0
+param0['g'] = 9.81
+
+param10 = param0.copy()
+param10['l1'] = 0.5
+param10['l2'] = 0.5
+param10['m1'] = 1.5
+param10['m2'] = 1.5
+param11 = param0.copy()
+param11['m1'] = 1.5
+param11['m2'] = 1.5
+param12 = param0.copy()
+param12['l1'] = 1.5
+param12['l2'] = 1.5
+param12['m1'] = 1.5
+param12['m2'] = 1.5
+param13 = param0.copy()
+param13['l1'] = 0.5
+param13['l2'] = 0.5
+param14 = param0.copy()
+param15 = param0.copy()
+param15['l1'] = 1.5
+param15['l2'] = 1.5
+param16 = param0.copy()
+param16['m1'] = 0.5
+param16['m2'] = 0.5
+param16['l1'] = 0.5
+param16['l2'] = 0.5
+param17 = param0.copy()
+param17['m1'] = 0.5
+param17['m2'] = 0.5
+param18 = param0.copy()
+param18['m1'] = 0.5
+param18['m2'] = 0.5
+param18['l1'] = 1.5
+param18['l2'] = 1.5
+
 # Define the noise levels to test
-noise_levels = [0, 1e-3, 2e-2, 6e-2, 1e-1]
+param_list = [param1,param2,param3,param4,param5,param6,param7,param8,param9,param0,param10,param11,param12,param13,param14,param15,param16,param17,param18]
+
+param_list_ = ['param1','param2','param3','param4','param5','param6','param7','param8','param9','param0','param10','param11','param12','param13','param14','param15','param16','param17','param18']
 
 # Initialize lists to store results for each noise level
 success_rates = []
@@ -15,52 +112,44 @@ average_errors = []
 average_epochs = []
 
 # Run the algorithm for each noise level
-for noise_level in noise_levels:
-    successes = 0
-    total_runs = 100
+for params in param_list:
     errors = []
     epochs = []
+    j = 0
 
-    for i in range(total_runs):
+    for i in tqdm(range(10)):
         try:
-            # Run your algorithm with the current noise level
-            estimated_coeff_dict, error, epoch = run_algorithm(noiselevel=noise_level)
-
-            # Record the error and the number of epochs
-            
-
-            # Check if the run was a success
+            error, epoch = run_algorithm(param=params,display=False,device='cuda:1')
             if is_success(error):
-                successes += 1
+                print(f"Success! Error: {error}, Epoch: {epoch}")
                 errors.append(error)
                 epochs.append(epoch)
         except Exception as e:
-            print(f"An error occurred while running the algorithm: {e}")
+            print(f"Error: {e}")
+        
 
+    j += 1
     # Calculate the success rate
-    success_rate = successes / total_runs
+
 
     # Record the results for this noise level
-    success_rates.append(success_rate)
+
     average_errors.append(np.mean(errors))
     average_epochs.append(np.mean(epochs))
 
-#save the success rate tendency
-
-
 # Create a DataFrame to store the results
 df = pd.DataFrame({
-    'Noise Level': noise_levels,
-    'Success Rate': success_rates,
+    'param set': param_list_,
     'Average Error': average_errors,
     'Average Epochs': average_epochs
 })
 
 # Save the DataFrame to a CSV file
-df.to_csv('results.csv', index=False)
+df.to_csv('/mnt/ssd1/stilrmy/finished_work/SINDy_with_Rdf/results_PGD_PT.csv', index=False)
+
 # Print the success rates, average errors, and average number of epochs for each noise level
-for noise_level, success_rate, avg_error, avg_epochs in zip(noise_levels, success_rates, average_errors, average_epochs):
-    print(f"Noise level: {noise_level}")
+for param, success_rate, avg_error, avg_epochs in zip(param_list_, success_rates, average_errors, average_epochs):
+    print(f"param set: {param}")
     print(f"Success rate: {success_rate*100}%")
     print(f"Average error: {avg_error}")
     print(f"Average number of epochs: {avg_epochs}")
