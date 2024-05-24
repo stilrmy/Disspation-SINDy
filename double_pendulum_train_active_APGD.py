@@ -80,7 +80,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
         param['m2'] = 1
         param['b1'] = 0.5
         param['b2'] = 0.5
-        param['tau0'] = 0.1
+        param['tau0'] = 0.5
         param['omega1'] = 0.5
         param['omega2'] = 0.3
         param['phi'] = 0
@@ -431,7 +431,10 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
             #regularize the biggest coefficient to 20
             idx = torch.argmax(torch.abs(xi_L))
             cof = (param['m1']+param['m2'])*param['g']*param['L1']
-            xi_Ltemp = xi_L / xi_L[idx] * cof
+            if param['tau0'] == 0:
+                xi_Ltemp = xi_L / xi_L[idx] * cof
+            else:
+                xi_Ltemp = xi_L
             surv_index = ((torch.abs(xi_Ltemp) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
             expr = np.array(expr)[surv_index].tolist()
 
@@ -464,7 +467,8 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
             #calculate the relative threshold
 
             scaler = cof / torch.abs(xi_L).max().item()
-            xi_L = xi_L * scaler
+            if param['tau0'] == 0:
+                xi_L = xi_L * scaler
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
@@ -545,8 +549,9 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
     #scale the x0_t**2 and use that scaler to scale the other coefficients
     scale = 1/estimated_coeff_dict[x0_t**2]
 
-    for key in estimated_coeff_dict.keys():
-        estimated_coeff_dict[key] = estimated_coeff_dict[key]*scale
+    if param['tau0'] == 0:
+        for key in estimated_coeff_dict.keys():
+            estimated_coeff_dict[key] = estimated_coeff_dict[key]*scale
 
     # Ensure that the real and estimated coefficients are in the same order
     real_coeff_values = []
