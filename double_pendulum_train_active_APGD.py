@@ -65,7 +65,7 @@ def proxL1norm(w_hat, alpha, nonpenaltyidx):
 
 
 
-def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=200,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=1e-6,tol=1e-5,display=True):
+def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=200,Epoch0=400,lr=3e-5,lr_step=1e-5,lam0=0.8,lam=0.1,batch_size=512,threshold_d=1e-6,tol=1e-5,display=True):
 
 #default setting, works well for most cases
 # def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=0):
@@ -80,7 +80,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
         param['m2'] = 1
         param['b1'] = 0.5
         param['b2'] = 0.5
-        param['tau0'] = 0.5
+        param['tau0'] = 1
         param['omega1'] = 0.5
         param['omega2'] = 0.3
         param['phi'] = 0
@@ -377,6 +377,9 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
 
       
         i = 0
+        if len(xi_L) <= 10:
+            lam = 0.02
+
         
         if(len(xi_L)+len(xi_d) <= 8):
             lam = 0
@@ -549,9 +552,9 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
     #scale the x0_t**2 and use that scaler to scale the other coefficients
     scale = 1/estimated_coeff_dict[x0_t**2]
 
-    if param['tau0'] == 0:
-        for key in estimated_coeff_dict.keys():
-            estimated_coeff_dict[key] = estimated_coeff_dict[key]*scale
+
+    for key in estimated_coeff_dict.keys():
+        estimated_coeff_dict[key] = estimated_coeff_dict[key]*scale
 
     # Ensure that the real and estimated coefficients are in the same order
     real_coeff_values = []
