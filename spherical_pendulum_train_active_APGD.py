@@ -87,9 +87,9 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
     sphericalPendulum = sphericalPendulum2_wrapper(param)
     #Saving Directory
     rootdir = ".../spherical_pendulum/"
-    create_data = False
+    create_data = True
     training = True
-    save = True
+    save = False
 
     if(create_data):
         if display:
@@ -116,6 +116,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
         for i in range(num_sample-1):
             Tau_temp = torch.cat((Tau_temp, Tau), dim=1)
         Tau = Tau_temp
+        Tau_org = Tau.clone()
         if(save==True):
             #create the folder if not exist
             if not os.path.exists(rootdir):
@@ -130,6 +131,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
         Xdot = np.load(rootdir + "spherical_Xdot.npy")
         Tau = np.load(rootdir + "spherical_Tau.npy")
         Tau = torch.tensor(Tau,device=device).float()
+        Tau_org = Tau.clone()
 
     #adding noise
     mu, sigma = 0, noiselevel
@@ -406,10 +408,12 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
             idx = torch.argmax(torch.abs(xi_L))
             cof = param['m'] * param['L']*param['g']
             xi_Ltemp = xi_L / xi_L[idx] * cof
+            xi_d = xi_d / xi_L[idx] * cof
+            Tau = Tau / xi_L[idx] * cof
             surv_index = ((torch.abs(xi_Ltemp) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
             expr = np.array(expr)[surv_index].tolist()
 
-            xi_L =xi_L[surv_index].clone().detach().requires_grad_(True)
+            xi_L =xi_Ltemp[surv_index].clone().detach().requires_grad_(True)
             xi_d = xi_d.clone().detach().requires_grad_(True)
             prevxi_L = xi_L.clone().detach()
             if display:
@@ -439,6 +443,8 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
 
             scaler = cof / torch.abs(xi_L).max().item()
             xi_L = xi_L * scaler
+            xi_d = xi_d * scaler
+            Tau = Tau * scaler
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
@@ -484,6 +490,14 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
 
 
 
+    
+    ## Adding known terms
+    scaler = Tau_org[0,5]/Tau[0,5]
+    xi_L = torch.cat((xi_L, c), dim=0)
+    xi_L = xi_L * scaler
+    xi_d = xi_d * scaler
+    xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
+    L = HL.generateExpression(xi_Lcpu,expr)
     
     L = str(simplify(L)) 
     D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)

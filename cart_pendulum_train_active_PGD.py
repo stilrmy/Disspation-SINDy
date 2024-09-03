@@ -141,6 +141,7 @@ def main(param=None,device='cuda:4',opt_mode='PGD',num_sample=100,noiselevel=0,E
         for i in range(num_sample-1):
             Tau_temp = torch.cat((Tau_temp, Tau), dim=1)
         Tau = Tau_temp
+        Tau_org = Tau.clone()
         if(save==True):
             np.save(rootdir + "X.npy", X)
             np.save(rootdir + "Xdot.npy",Xdot)
@@ -414,7 +415,7 @@ def main(param=None,device='cuda:4',opt_mode='PGD',num_sample=100,noiselevel=0,E
             lam = 0
             threshold = 1e-3
             converged = True
-            Epoch = 500
+            Epoch = 200
         # elif(len(xi_L) <= 8):
         #     lam = 0
         else:
@@ -457,7 +458,9 @@ def main(param=None,device='cuda:4',opt_mode='PGD',num_sample=100,noiselevel=0,E
         if stage < 1 or len(xi_L) > 18:
             #regularize the biggest coefficient to 20
             idx = torch.argmax(torch.abs(xi_L))
-            xi_Ltemp = xi_L / xi_L[idx] * 20
+            xi_Ltemp = xi_L / xi_L[idx] * 19.6
+            xi_d = xi_d / xi_L[idx] * 19.6
+            Tau = Tau / xi_L[idx] * 19.6
             surv_index = ((torch.abs(xi_Ltemp) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
             expr = np.array(expr)[surv_index].tolist()
 
@@ -482,8 +485,10 @@ def main(param=None,device='cuda:4',opt_mode='PGD',num_sample=100,noiselevel=0,E
         ## Thresholding
             ## obtaining analytical model
             #calculate the relative threshold
-            scaler = 20 / torch.abs(xi_L).max().item()
+            scaler = 19.6 / torch.abs(xi_L).max().item()
             xi_L = xi_L * scaler
+            xi_d = xi_d * scaler
+            Tau = Tau * scaler
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
@@ -529,7 +534,13 @@ def main(param=None,device='cuda:4',opt_mode='PGD',num_sample=100,noiselevel=0,E
     ## Adding known terms
     expr = np.array(expr)
     expr = np.append(expr, known_expr)
+    scaler = Tau_org[0,5]/Tau[0,5]
     xi_L = torch.cat((xi_L, c), dim=0)
+    xi_L = xi_L * scaler
+    xi_d = xi_d * scaler
+    xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
+    L = HL.generateExpression(xi_Lcpu,expr)
+    
     L = str(simplify(L)) 
     D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
     if display:

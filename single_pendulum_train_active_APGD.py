@@ -57,7 +57,7 @@ def proxL1norm(w_hat, alpha, nonpenaltyidx):
 
 
 
-def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1,Epoch=200,Epoch0=400,lr=8e-6,lr_step=0,lam0=1,lam=0.4,batch_size=128,threshold_d=1e-6,tol=1e-7,display=True):
+def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=2e-2,Epoch=100,Epoch0=100,lr=2e-6,lr_step=0,lam0=0.5,lam=0.1,batch_size=128,threshold_d=1e-6,tol=1e-7,display=True):
 
 #default setting, works well for most cases
 # def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=0):
@@ -69,7 +69,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
         param['L'] = 1
         param['m'] = 1
         param['b'] = 0.5
-        param['tau'] = 0.1
+        param['tau'] = 0.5
         param['g'] = 9.81
 # The gravitational acceleration (m.s-2).
     
@@ -103,6 +103,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
         for i in range(num_sample-1):
             Tau_temp = torch.cat((Tau_temp, Tau))
         Tau = Tau_temp.flatten()
+        Tau_org = Tau.clone()
 
         if(save==True):
             np.save(rootdir + "X.npy", X)
@@ -217,7 +218,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
             lossval.backward()
             with torch.no_grad():
                 weight = weight - lr * weight.grad
-                weight[:-1] = proxL1norm(weight[:-1], lr*lam, [])
+                weight[:-1] = proxL1norm(weight[:-1], lam*lr, [])
                 weight.grad = None
                 if D_CAL:
                     v = weight[:len(expr)]
@@ -239,7 +240,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
     loss_log = []
     while(i<=Epoch0):
         if display:
-            if i%50 == 0:
+            if i%1 == 0:
                 print("\n")
                 print("Stage 1")
                 print("Epoch "+str(i) + "/" + str(Epoch0))
@@ -247,7 +248,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
         xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam0,device=device)
         temp = lossitem
         if display:
-            if i%50 == 0:
+            if i%1 == 0:
                 print("Loss : ", lossitem)
         loss_log.append(lossitem)
         i+=1
@@ -295,6 +296,8 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
         loss_log = []
       
         i = 0
+        if len(xi_L) <= 3:
+            lam=0.05
         
         if(len(xi_L)+len(xi_d) <= 3):
             lam = 0
@@ -316,14 +319,14 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
         
         while(i<=Epoch):
             if display:
-                if i%50 == 0:
+                if i%1 == 0:
                     print("\n")
                     print("Stage " + str(stage+2))
                     print("Epoch "+str(i) + "/" + str(Epoch))
                     print("Learning rate : ", lr)
             xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam,D_CAL=True,device=device)
             if display:
-                if i%50 == 0:
+                if i%1 == 0:
                     print("Loss : ", lossitem)
             loss_log.append(lossitem)
             i+=1
@@ -347,13 +350,16 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
         
         
         ## Thresholding
-        if stage < 10000:
+        if stage < 2:
             
             #regularize the biggest coefficient to 20
             idx = torch.argmax(torch.abs(xi_L))
             cof = param['m']*param['g']*param['L']
-            xi_Ltemp = xi_L / xi_L[idx] * cof
-            surv_index = ((torch.abs(xi_Ltemp) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
+
+            # xi_Ltemp = xi_L / xi_L[idx] * cof
+            # Tau = Tau / xi_L[idx] * cof
+            # xi_d = xi_d / xi_L[idx] * cof
+            surv_index = ((torch.abs(xi_L) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
             expr = np.array(expr)[surv_index].tolist()
 
             xi_L =xi_L[surv_index].clone().detach().requires_grad_(True)
@@ -371,7 +377,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
             if display:
                 print("Result stage " + str(stage+2) + ":" , L)
                 print("simplified : ", simplify(L))
-                print("Dissipation : ", simplify(D))
+                print("Dissipation : ", D)
             #if the training is converged, run a extra round with strict threshold to remove uneccessary terms, then break the loop
             if converged:
                 if quiting == 2:
@@ -387,7 +393,9 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
             #calculate the relative threshold
             cof = param['m']*param['g']*param['L']
             scaler = cof / torch.abs(xi_L).max().item()
-            xi_L = xi_L * scaler
+            # xi_L = xi_L * scaler
+            # xi_d = xi_d * scaler
+            # Tau = Tau * scaler
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
@@ -421,7 +429,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             if display:
                 print("Result stage " + str(stage+2) + ":" , L)
-                print("Dissipation : ", simplify(D))
+                print("Dissipation : ", D)
                 total_epoch = (stage+1) * Epoch + Epoch0
             if converged:
                 #if the training is converged, run a extra round with strict threshold to remove uneccessary terms, then break the loop
@@ -433,13 +441,17 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
 
 
 
-    
-    L = str(simplify(L)) 
+    scaler = Tau_org[10]/Tau[10]
+    print(scaler)
+    xi_L = xi_L * scaler
+    xi_d = xi_d * scaler
+    xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
+    L = str(L) 
     D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
     if display:
         print("\m")
         print("Obtained Lagrangian : ", L)
-        print("Obtained Dissipation : ", simplify(D))
+        print("Obtained Dissipation : ", D)
     #caluclate the relative error of the obtained coefficients
     #the real Lagrangian model is m1*l1**2*x0_t**2/2 + m2*(l1**2*x0_t**2/2 + l2**2*x1_t**2/2 + l1*l2*x0_t*x1_t*cos(x0)*cos(x1)+l1*l2*x0_t*x1_t*sin(x0)*sin(x1)) + (m1+m2)*g*l1*cos(x0) + m2*g*l2*cos(x1)
 
@@ -457,11 +469,12 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=20,noiselevel=1e-1
     # Get the real coefficients
     real_coeff_dict = L_real.as_coefficients_dict()
     # Create a dictionary of estimated coefficients
-    estimated_coeff_dict = filter_dict
+    L = sympy.simplify(L)
+    estimated_coeff_dict = L.as_coefficients_dict()
 
 
     #scale the x0_t**2 and use that scaler to scale the other coefficients
-    scale = m*g*l/estimated_coeff_dict[sin(x0)]
+    scale = m*g*l/estimated_coeff_dict[cos(x0)]
 
     for key in estimated_coeff_dict.keys():
         estimated_coeff_dict[key] = estimated_coeff_dict[key]*scale

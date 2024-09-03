@@ -69,7 +69,7 @@ def proxL1norm(w_hat, alpha, nonpenaltyidx):
 
 
 
-def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=1e-1,Epoch=200,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=1e-6,tol=1e-5,display=True):
+def main(param=None,device='cuda:2',opt_mode='PGD',num_sample=100,noiselevel=1e-1,Epoch=200,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=1e-6,tol=1e-5,display=True):
 
 #default setting, works well for most cases
 # def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=0):
@@ -601,8 +601,41 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=1e-
         text_file.write(L)
         text_file.close()
     return  sum_relative_errors,total_epoch
+
+def performance_test():
+    max_noise_level = 1.0
+    noise_scaler = 2
+    max_tests_per_level = 20
+    noiselevel = 1e-2
+    highest_passed_noise = 0
+
+    while noiselevel <= max_noise_level:
+        print(f"Testing noise level: {noiselevel}")
+        pass_condition = False
+        for test_num in range(max_tests_per_level):
+            print(f"Test {test_num + 1}/{max_tests_per_level} at noise level {noiselevel}")
+            try:
+                sum_relative_errors, total_epoch = main(noiselevel=noiselevel, display=False)
+                if sum_relative_errors < 1:  # Adjust the threshold as needed
+                    pass_condition = True
+                    print(f"Passed at noise level {noiselevel} with sum_relative_errors: {sum_relative_errors}")
+                    break
+            except Exception as e:
+                print(f"Error during test {test_num + 1} at noise level {noiselevel}: {e}")
+                continue
+        
+        if pass_condition:
+            highest_passed_noise = noiselevel
+        
+        noiselevel *= noise_scaler
+
+    if highest_passed_noise > 0:
+        print(f"Maximum noise level handled: {highest_passed_noise}")
+    else:
+        print("Did not pass any noise level")
+
 if __name__ == "__main__":
-    main()
+    performance_test()
 
 
 
