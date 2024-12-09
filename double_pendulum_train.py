@@ -128,6 +128,8 @@ for p in polynom:
     for t in trig:
         product.append(p + '*' + t)
 expr = polynom + trig + product
+print(len(expr))
+exit()
 d_expr = ['x0_t**2','x1_t**2']
 
 

@@ -69,7 +69,7 @@ def proxL1norm(w_hat, alpha, nonpenaltyidx):
 
 
 
-def main(param=None,device='cuda:2',opt_mode='PGD',num_sample=100,noiselevel=1e-1,Epoch=200,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=1e-6,tol=1e-5,display=True):
+def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=1e-1,Epoch=200,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=1e-6,tol=1e-5,display=True,use_regularization=True):
 
 #default setting, works well for most cases
 # def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=0):
@@ -321,7 +321,7 @@ def main(param=None,device='cuda:2',opt_mode='PGD',num_sample=100,noiselevel=1e-
             print("Stage 1")
             print("Epoch "+str(i) + "/" + str(Epoch0))
             print("Learning rate : ", lr)
-        xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam0,device=device)
+        xi_L, prevxi_L, xi_d, lossitem= PGD_loop(Tau, xi_L,prevxi_L,xi_d,RHS,Dissip,Xdot,batch_size,lr=lr,lam=lam0,device=device,D_CAL=False)
         temp = lossitem
         loss_log.append(lossitem)
         i+=1
@@ -435,16 +435,22 @@ def main(param=None,device='cuda:2',opt_mode='PGD',num_sample=100,noiselevel=1e-
         ## Thresholding
         if stage < 1:
             
-            #regularize the biggest coefficient to 20
-            idx = torch.argmax(torch.abs(xi_L))
-            cof = (param['m1']+param['m2'])*param['g']*param['L1']
-            xi_Ltemp = xi_L / xi_L[idx] * cof
-            Tau = Tau / xi_L[idx] * cof
-            xi_d = xi_d / xi_L[idx] * cof
+            
+            # Add regularization flag check
+            if use_regularization:
+                #regularize the biggest coefficient to 20
+                idx = torch.argmax(torch.abs(xi_L))
+                cof = (param['m1']+param['m2'])*param['g']*param['L1']
+                xi_Ltemp = xi_L / xi_L[idx] * cof
+                Tau = Tau / xi_L[idx] * cof
+                xi_d = xi_d / xi_L[idx] * cof
+            else:
+                xi_Ltemp = xi_L
+
             surv_index = ((torch.abs(xi_Ltemp) >= threshold)).nonzero(as_tuple=True)[0].detach().cpu().numpy()
             expr = np.array(expr)[surv_index].tolist()
 
-            xi_L =xi_L[surv_index].clone().detach().requires_grad_(True)
+            xi_L = xi_L[surv_index].clone().detach().requires_grad_(True)
             xi_d = xi_d.clone().detach().requires_grad_(True)
             prevxi_L = xi_L.clone().detach()
             if display:
@@ -471,12 +477,16 @@ def main(param=None,device='cuda:2',opt_mode='PGD',num_sample=100,noiselevel=1e-
         ## Thresholding
             ## obtaining analytical model
             #calculate the relative threshold
+            if use_regularization:
+                #regularize the biggest coefficient to 20
+                idx = torch.argmax(torch.abs(xi_L))
+                cof = (param['m1']+param['m2'])*param['g']*param['L1']
+                xi_Ltemp = xi_L / xi_L[idx] * cof
+                Tau = Tau / xi_L[idx] * cof
+                xi_d = xi_d / xi_L[idx] * cof
+            else:
+                xi_Ltemp = xi_L
 
-            scaler = cof / torch.abs(xi_L).max().item()
-
-            xi_L = xi_L * scaler
-            Tau = Tau * scaler
-            xi_d = xi_d * scaler
             xi_Lcpu = np.around(xi_L.detach().cpu().numpy(),decimals=3)
             L = HL.generateExpression(xi_Lcpu,expr,threshold=1e-1)
             D = HL.generateExpression(xi_d.detach().cpu().numpy(),d_expr)
@@ -520,7 +530,10 @@ def main(param=None,device='cuda:2',opt_mode='PGD',num_sample=100,noiselevel=1e-
                 else:
                     quiting += 1
     # backward scaling
-    scaler = Tau_temp[0][0]/Tau[0][0]
+    if use_regularization:
+        scaler = Tau_temp[0][0]/Tau[0][0]
+    else:
+        scaler = 1
     bf_L = sympify(L)
     xi_L = xi_L * scaler
     xi_d = xi_d * scaler
@@ -602,40 +615,39 @@ def main(param=None,device='cuda:2',opt_mode='PGD',num_sample=100,noiselevel=1e-
         text_file.close()
     return  sum_relative_errors,total_epoch
 
-def performance_test():
-    max_noise_level = 1.0
-    noise_scaler = 2
-    max_tests_per_level = 20
-    noiselevel = 1e-2
-    highest_passed_noise = 0
+def performance_test(noiselevel=0.05, num_tests=50, use_regularization=True):
+    successful_tests = 0
+    total_errors = 0
+    total_epochs = 0
 
-    while noiselevel <= max_noise_level:
-        print(f"Testing noise level: {noiselevel}")
-        pass_condition = False
-        for test_num in range(max_tests_per_level):
-            print(f"Test {test_num + 1}/{max_tests_per_level} at noise level {noiselevel}")
-            try:
-                sum_relative_errors, total_epoch = main(noiselevel=noiselevel, display=False)
-                if sum_relative_errors < 1:  # Adjust the threshold as needed
-                    pass_condition = True
-                    print(f"Passed at noise level {noiselevel} with sum_relative_errors: {sum_relative_errors}")
-                    break
-            except Exception as e:
-                print(f"Error during test {test_num + 1} at noise level {noiselevel}: {e}")
-                continue
-        
-        if pass_condition:
-            highest_passed_noise = noiselevel
-        
-        noiselevel *= noise_scaler
+    print(f"Running {num_tests} tests at noise level: {noiselevel}")
 
-    if highest_passed_noise > 0:
-        print(f"Maximum noise level handled: {highest_passed_noise}")
-    else:
-        print("Did not pass any noise level")
+    for test_num in range(num_tests):
+        print(f"Test {test_num + 1}/{num_tests}")
+        try:
+            sum_relative_errors, total_epoch = main(noiselevel=noiselevel, display=False, use_regularization=use_regularization)
+            if sum_relative_errors < 1.5:  # Adjust the threshold as needed
+                successful_tests += 1
+                total_errors += sum_relative_errors
+                total_epochs += total_epoch
+                print(f"Test {test_num + 1} passed with sum_relative_errors: {sum_relative_errors}")
+            else:
+                print(f"Test {test_num + 1} failed with sum_relative_errors: {sum_relative_errors}")
+        except Exception as e:
+            print(f"Error during test {test_num + 1}: {e}")
+
+    success_rate = (successful_tests / num_tests) * 100
+    avg_error = total_errors / successful_tests if successful_tests > 0 else float('inf')
+    avg_epochs = total_epochs / successful_tests if successful_tests > 0 else float('inf')
+
+    print(f"\nResults:")
+    print(f"Noise level: {noiselevel}")
+    print(f"Success rate: {success_rate:.2f}%")
+    print(f"Average relative error (for successful tests): {avg_error:.4f}")
+    print(f"Average epochs (for successful tests): {avg_epochs:.2f}")
 
 if __name__ == "__main__":
-    performance_test()
+    performance_test(noiselevel=0.01, num_tests=50, use_regularization=True)
 
 
 
