@@ -196,6 +196,9 @@ def main(param=None,device='cuda:4',opt_mode='PGD',num_sample=100,noiselevel=0,E
     #Assuming we get a prior knowledge about a single pendulum equations
     temp = pend_terms[1:] + cartpole_terms
     expr = HL.buildFunctionExpressions(3,len(temp),temp)
+    print(len(expr))
+    print(expr)
+    exit()
     d_expr = ['x0_t**2','x1_t**2']
     if display:
         print("Expression : ", expr)

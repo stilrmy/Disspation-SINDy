@@ -146,6 +146,7 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=2e-
     #build function expression for the library in str
     expr= HL.buildFunctionExpressions(2,states_dim,states,use_sine=True)
     print(len(expr))
+    print(expr)
     exit()
     # d_expr = ['x0_t**2','x1_t**2','x0_t','x1_t']
     d_expr = ['x0_t**2']

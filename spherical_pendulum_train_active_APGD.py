@@ -66,7 +66,7 @@ def proxL1norm(w_hat, alpha, nonpenaltyidx):
 
 
 
-def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=1e-6,tol=1e-5,display=True):
+def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=2,noiselevel=0,Epoch=100,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=1e-6,tol=1e-5,display=True):
 
 #default setting, works well for most cases
 # def main(param=None,device='cuda:0',opt_mode='PGD',num_sample=100,noiselevel=0,Epoch=100,Epoch0=100,lr=4e-6,lr_step=1e-6,lam0=0.8,lam=0.1,batch_size=128,threshold_d=0):
@@ -174,6 +174,9 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=0,E
         for t in trig:
             product.append(p + '*' + t)
     expr = polynom + trig + product
+    print(len(expr))
+    print(expr)
+    exit()
     # d_expr = ['x0_t**2','x1_t**2','x0_t','x1_t']
     d_expr = ['x0_t**2','x1_t**2']
     # expr = ['cos(x0)','cos(x1)','x0_t*x1_t*cos(x0)*cos(x1)','x0_t*x1_t*sin(x0)*sin(x1)','x0_t**2','x1_t**2']

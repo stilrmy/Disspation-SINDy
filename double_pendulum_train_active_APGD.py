@@ -171,6 +171,9 @@ def main(param=None,device='cuda:1',opt_mode='PGD',num_sample=100,noiselevel=1e-
         for t in trig:
             product.append(p + '*' + t)
     expr = polynom + trig + product
+    print(len(expr))
+    print(expr)
+    exit()
     # d_expr = ['x0_t**2','x1_t**2','x0_t','x1_t']
     d_expr = ['x0_t**2','x1_t**2']
     # expr = ['cos(x0)','cos(x1)','x0_t*x1_t*cos(x0)*cos(x1)','x0_t*x1_t*sin(x0)*sin(x1)','x0_t**2','x1_t**2']
